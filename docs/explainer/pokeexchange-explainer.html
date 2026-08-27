@@ -1,0 +1,1113 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Limit Order Book &amp; Matching Engine — Design Primer</title><style>
+@page { size: letter; margin: 15mm 14mm 16mm 14mm; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  margin: 0; background: #f9f9f7; color: #0b0b0b;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 10.6pt; line-height: 1.58; text-rendering: optimizeLegibility;
+}
+.sheet { max-width: 186mm; margin: 0 auto; padding: 0 2mm; }
+p { margin: 0 0 .78em; }
+b, strong { font-weight: 650; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .93em; }
+code { background: #eeede8; padding: .1em .34em; border-radius: 3px; }
+a { color: #2a78d6; }
+
+/* ---- cover ---- */
+.cover { height: 246mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .eyebrow { font-size: 10pt; letter-spacing: .22em; text-transform: uppercase;
+  color: #898781; margin-bottom: 10mm; }
+.cover h1 { font-size: 40pt; line-height: 1.02; margin: 0 0 6mm; letter-spacing: -.022em;
+  font-weight: 680; }
+.cover h1 .sub { display: block; font-size: 17pt; font-weight: 450; color: #52514e;
+  letter-spacing: -.008em; margin-top: 5mm; }
+.cover .rule { height: 5px; width: 74mm; background: #2a78d6; border-radius: 3px; margin: 8mm 0; }
+.cover .lede { font-size: 12.4pt; line-height: 1.55; max-width: 132mm; color: #2a2a28; }
+.cover .meta { margin-top: auto; padding-top: 12mm; font-size: 9.6pt; color: #898781;
+  display: flex; gap: 10mm; flex-wrap: wrap; }
+
+/* ---- structure ---- */
+h2.part { break-before: page; page-break-before: always;
+  font-size: 20pt; font-weight: 660; letter-spacing: -.014em;
+  margin: 0 0 1mm; padding-top: 2mm; line-height: 1.15; }
+h2.part .num { display: block; font-size: 9.4pt; letter-spacing: .2em; font-weight: 600;
+  color: #2a78d6; text-transform: uppercase; margin-bottom: 2.5mm; }
+h2.part + .standfirst { font-size: 11.4pt; color: #52514e; margin: 0 0 7mm;
+  padding-bottom: 5mm; border-bottom: 2px solid #e1e0d9; max-width: 150mm; }
+h3 { font-size: 13pt; font-weight: 640; margin: 8mm 0 2.4mm; letter-spacing: -.008em;
+  break-after: avoid; page-break-after: avoid; }
+h4 { font-size: 10.9pt; font-weight: 640; margin: 6mm 0 1.6mm; color: #2a2a28;
+  break-after: avoid; page-break-after: avoid; }
+
+/* ---- figures ---- */
+.fig { margin: 6mm 0 7mm; padding: 4.5mm 5mm 3.5mm; background: #fcfcfb;
+  border: 1px solid rgba(11,11,11,.10); border-radius: 8px;
+  break-inside: avoid; page-break-inside: avoid; }
+.fig-title { font-size: 10.3pt; font-weight: 660; margin-bottom: 3mm; color: #0b0b0b; }
+.fig svg { display: block; }
+.fig-cap { font-size: 9.5pt; line-height: 1.5; color: #52514e; margin: 3mm 0 0; }
+.fig-note { font-size: 8.7pt; line-height: 1.45; color: #898781; margin: 1.8mm 0 0;
+  font-style: italic; }
+
+/* ---- callouts ---- */
+.key, .aside, .flag {
+  border-radius: 8px; padding: 4mm 5mm; margin: 5mm 0;
+  break-inside: avoid; page-break-inside: avoid; font-size: 10.2pt; }
+.key { background: #eef4fc; border-left: 4px solid #2a78d6; }
+.aside { background: #f2f1ed; border-left: 4px solid #c3c2b7; }
+.flag { background: #fdf0ec; border-left: 4px solid #e34948; }
+.key .lab, .aside .lab, .flag .lab {
+  display: block; font-size: 8.7pt; letter-spacing: .13em; text-transform: uppercase;
+  font-weight: 700; margin-bottom: 1.8mm; }
+.key .lab { color: #1c5cab; } .aside .lab { color: #6f6d67; } .flag .lab { color: #b3302f; }
+.key p:last-child, .aside p:last-child, .flag p:last-child { margin-bottom: 0; }
+
+/* ---- equations ---- */
+.eq { background: #f4f3ef; border-radius: 8px; padding: 4.5mm 5mm; margin: 4mm 0;
+  text-align: center; font-size: 12.4pt; line-height: 1.85;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  break-inside: avoid; page-break-inside: avoid; }
+.eq .where { display: block; margin-top: 3mm; font-size: 9.3pt; color: #52514e;
+  text-align: left; font-family: system-ui, sans-serif; line-height: 1.55; }
+.frac { display: inline-flex; flex-direction: column; vertical-align: middle;
+  text-align: center; margin: 0 .18em; font-size: .88em; }
+.frac .n { border-bottom: 1.4px solid currentColor; padding: 0 .34em; }
+.frac .d { padding: 0 .34em; }
+.term { display: inline-block; border-bottom: 2px solid #2a78d6; padding-bottom: 1px; }
+.rad { display: inline-block; border-top: 1.4px solid currentColor;
+  padding: 2px .3em 0; margin-left: -1px; }
+
+/* ---- tables ---- */
+table { width: 100%; border-collapse: collapse; margin: 4.5mm 0; font-size: 9.7pt;
+  break-inside: avoid; page-break-inside: avoid; }
+th { text-align: left; font-weight: 660; font-size: 8.6pt; letter-spacing: .09em;
+  text-transform: uppercase; color: #52514e; border-bottom: 1.6px solid #c3c2b7;
+  padding: 2mm 3mm 1.6mm; }
+td { padding: 2.2mm 3mm; border-bottom: 1px solid #e8e7e1; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td.mono, th.mono { font-family: ui-monospace, Menlo, monospace; }
+td.num { text-align: right; font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, Menlo, monospace; }
+
+/* ---- lists ---- */
+ul, ol { margin: 0 0 .8em; padding-left: 5.5mm; }
+li { margin-bottom: .34em; }
+dl.gloss { margin: 0; }
+dl.gloss dt { font-weight: 660; margin-top: 3.4mm; font-size: 10.2pt; }
+dl.gloss dd { margin: .5mm 0 0; color: #2a2a28; font-size: 10pt; }
+
+/* ---- misc ---- */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8mm; }
+.pill { display: inline-block; background: #2a78d6; color: #fff; font-size: 8.4pt;
+  font-weight: 650; letter-spacing: .06em; padding: .9mm 2.4mm; border-radius: 99px;
+  text-transform: uppercase; vertical-align: 1.5px; }
+.pill.grey { background: #898781; }
+pre { background: #f4f3ef; border-radius: 8px; padding: 4mm 5mm; margin: 4mm 0;
+  font-size: 9.1pt; line-height: 1.55; overflow: visible; white-space: pre-wrap;
+  break-inside: avoid; page-break-inside: avoid;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre .c { color: #898781; }
+.tocbox { background: #fcfcfb; border: 1px solid rgba(11,11,11,.10); border-radius: 8px;
+  padding: 5mm 6mm; margin: 6mm 0 0; }
+.tocbox ol { counter-reset: t; list-style: none; padding: 0; margin: 0; }
+.tocbox li { display: flex; gap: 3mm; padding: 1.5mm 0; border-bottom: 1px solid #eeede8;
+  font-size: 10pt; }
+.tocbox li:last-child { border-bottom: none; }
+.tocbox li b { min-width: 22mm; color: #2a78d6; font-size: 8.8pt; letter-spacing: .1em;
+  text-transform: uppercase; padding-top: .7mm; }
+</style></head><body><div class="sheet">
+<section class="cover">
+  <div class="eyebrow">Design primer &middot; sub-project A</div>
+  <h1>Limit Order Book<br>&amp; Matching Engine
+    <span class="sub">Building an electronic exchange from first principles &mdash;
+    and understanding every part of why</span></h1>
+  <div class="rule"></div>
+  <p class="lede">This document exists so that you can explain this project to
+  somebody else. It assumes you know how to program and nothing whatsoever about
+  finance. Every term is defined the first time it appears, every formula is taken
+  apart piece by piece, and nothing is asserted without a reason.</p>
+  <div class="meta">
+    <span>Internal codename &middot; Pok&eacute;Exchange</span>
+    <span>26 August 2026</span>
+    <span>Read this before we write any code</span>
+  </div>
+  <div class="tocbox">
+    <ol>
+      <li><b>Part 0</b><span>What problem does an exchange actually solve?</span></li>
+      <li><b>Part 1</b><span>Orders, the book, and the vocabulary</span></li>
+      <li><b>Part 2</b><span>Matching &mdash; the fifteen lines at the centre</span></li>
+      <li><b>Part 3</b><span>The fiddly rules, and why each one exists</span></li>
+      <li><b>Part 4</b><span>Why this is a hard engineering problem</span></li>
+      <li><b>Part 5</b><span>The mathematics, explained slowly</span></li>
+      <li><b>Part 6</b><span>Making the Pok&eacute;mon layer do real work</span></li>
+      <li><b>Part 7</b><span>What we build, in what order, and why</span></li>
+      <li><b>Glossary</b><span>Every term, one line each</span></li>
+    </ol>
+  </div>
+</section>
+
+<h2 class="part"><span class="num">Part 0</span>What problem does an exchange
+actually solve?</h2>
+<p class="standfirst">Before any code, the human problem. Everything the engine
+does is a mechanical answer to a difficulty that existed long before computers.</p>
+
+<p>Suppose you own a Charizard and you want money instead. You have a problem with
+three separate parts, and they are worth naming because the exchange solves each
+one with a different piece of machinery.</p>
+
+<p><b>First, search.</b> Somewhere out there is a person who wants a Charizard more
+than they want their money. You do not know who they are. Finding them costs you
+time, and the longer it takes, the more likely you accept a worse deal out of sheer
+impatience.</p>
+
+<p><b>Second, price.</b> Even once you find them, neither of you knows what a
+Charizard is <em>worth</em>. You will haggle. The outcome will depend on who is more
+desperate and who is better at haggling &mdash; not on any underlying truth. Two
+identical cards will sell for different amounts on the same afternoon.</p>
+
+<p><b>Third, trust.</b> You must hand over the card before, after, or at the same
+moment as they hand over the money. Somebody has to go first, and going first is
+dangerous.</p>
+
+<h3>The exchange&rsquo;s answer</h3>
+<p>An exchange is a single public place where everyone who wants to buy or sell
+posts their intentions in a standard format. That one move dissolves all three
+problems at once. Search collapses, because everyone is already in the room. Price
+becomes a public fact rather than a private negotiation, because you can see what
+everyone else is willing to pay. And trust stops mattering, because you are not
+dealing with a stranger &mdash; you are dealing with the exchange, which guarantees
+the swap.</p>
+
+<div class="key"><span class="lab">The single most important idea in this document</span>
+<p><b>The exchange never trades.</b> It owns nothing, wants nothing, and has no
+opinion about whether Charizard is expensive. It is a referee. Its only job is to
+take everybody&rsquo;s stated intentions and pair them up according to rules that
+were published in advance, so that nobody can afterwards claim they were cheated.</p>
+<p>Every design decision in the rest of this document is a consequence of three
+words: <b>fair</b>, <b>fast</b>, and <b>auditable</b>. When you cannot remember why
+we did something, it will be one of those three.</p></div>
+
+<h3>Two ways to run the room</h3>
+<p>You could collect everybody&rsquo;s intentions all morning, then at noon work out
+the single price that lets the most trades happen, and execute everything at once.
+That is a <b>call auction</b>, and real exchanges genuinely do this at the open and
+close of each day. It is fair and it is efficient, but you can only trade at noon.</p>
+
+<p>Or you could match people the instant a compatible pair exists, continuously, all
+day. That is a <b>continuous double auction</b> &mdash; &ldquo;double&rdquo; because
+both buyers and sellers post prices, rather than one side setting prices and the
+other taking them. This is what essentially every modern market does, and it is what
+we are building. The cost of continuous trading is that <em>time now matters</em>:
+if two people want the same thing, the one who asked first should get it. Hold onto
+that, because it is about to become the central rule of the whole system.</p>
+
+<h2 class="part"><span class="num">Part 1</span>Orders, the book, and the
+vocabulary</h2>
+<p class="standfirst">Six words &mdash; bid, ask, spread, mid, depth, liquidity
+&mdash; carry most of the meaning in this field. Here they are, with pictures.</p>
+
+<h3>An order is a sentence with four parts</h3>
+<p>Everything a participant can say to the exchange reduces to one sentence:
+<em>&ldquo;I want to <b>buy or sell</b>, this <b>many</b>, at this <b>price</b> or
+better, under these <b>conditions</b>.&rdquo;</em> That is it. There is no richer
+language. The two important kinds:</p>
+
+<p><b>A limit order</b> names a price and waits. &ldquo;Buy 100 at 99&rdquo; means
+<em>buy 100 for me, but never pay more than 99</em>. If nobody will sell that
+cheaply right now, the order does not fail and it does not compromise &mdash; it
+<b>rests</b> in the book and waits, possibly forever. A limit order is patience
+written down.</p>
+
+<p><b>A market order</b> names no price. &ldquo;Buy 100, now&rdquo; means <em>get me
+100, I accept whatever it costs</em>. It never rests, because there is nothing to
+wait for; it consumes whatever is available and stops. A market order is urgency
+written down.</p>
+
+<div class="aside"><span class="lab">Why the asymmetry matters</span>
+<p>A limit order can be left unfilled but never gives a bad price. A market order is
+always filled but can give a terrible price. You are choosing which risk you would
+rather carry &mdash; <b>price risk or execution risk</b> &mdash; and you cannot
+avoid both. Essentially all of trading strategy is that one trade-off, applied over
+and over.</p></div>
+
+<h3>The book is just the pile of unmatched patience</h3>
+<p>At any instant, some limit orders have not found a counterparty. Sort them by
+price and you have the <b>limit order book</b>: buyers on one side, sellers on the
+other, and a gap in the middle where nobody agrees.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 1 — A limit order book</figcaption><svg viewBox="0 0 700 300" width="100%" role="img" aria-label="Figure 1 — A limit order book"><rect width="700" height="300" fill="#fcfcfb"/><rect x="100.0" y="10.0" width="9" height="9" rx="2" fill="#2a78d6"/><text x="114.0" y="18.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Bids — buyers</text><rect x="219.8" y="10.0" width="9" height="9" rx="2" fill="#e34948"/><text x="233.8" y="18.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Asks — sellers</text><text x="86.0" y="46.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">103</text><path d="M100.0,30.0 H207.1 A4.0,4.0 0 0 1 211.1,34.0 V48.0 A4.0,4.0 0 0 1 207.1,52.0 H100.0 Z" fill="#e34948"/><text x="220.1" y="46.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">400</text><text x="86.0" y="78.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">102</text><path d="M100.0,62.0 H137.7 A4.0,4.0 0 0 1 141.7,66.0 V80.0 A4.0,4.0 0 0 1 137.7,84.0 H100.0 Z" fill="#e34948"/><text x="150.7" y="78.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">150</text><text x="86.0" y="110.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">101</text><path d="M100.0,94.0 H109.9 A4.0,4.0 0 0 1 113.9,98.0 V112.0 A4.0,4.0 0 0 1 109.9,116.0 H100.0 Z" fill="#e34948"/><text x="122.9" y="110.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">50</text><text x="86.0" y="166.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">99</text><path d="M100.0,150.0 H151.6 A4.0,4.0 0 0 1 155.6,154.0 V168.0 A4.0,4.0 0 0 1 151.6,172.0 H100.0 Z" fill="#2a78d6"/><text x="164.6" y="166.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">200</text><text x="86.0" y="198.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">98</text><path d="M100.0,182.0 H234.9 A4.0,4.0 0 0 1 238.9,186.0 V200.0 A4.0,4.0 0 0 1 234.9,204.0 H100.0 Z" fill="#2a78d6"/><text x="247.9" y="198.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">500</text><text x="86.0" y="230.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">97</text><path d="M100.0,214.0 H346.0 A4.0,4.0 0 0 1 350.0,218.0 V232.0 A4.0,4.0 0 0 1 346.0,236.0 H100.0 Z" fill="#2a78d6"/><text x="359.0" y="230.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">900</text><rect x="54" y="116" width="430" height="34" fill="#f0efec" rx="4"/><text x="110.0" y="138.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="letter-spacing:.02em">THE SPREAD — nobody is willing to trade in here</text><line x1="54.0" y1="116.0" x2="484.0" y2="116.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><line x1="54.0" y1="150.0" x2="484.0" y2="150.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><line x1="100.0" y1="24.0" x2="100.0" y2="244.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="415.0" y="46.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">worst ask</text><text x="415.0" y="110.0" font-size="11" fill="#e34948" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">BEST ASK 101</text><text x="415.0" y="166.0" font-size="11" fill="#2a78d6" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">BEST BID 99</text><text x="415.0" y="230.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">worst bid</text><text x="415.0" y="128.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">spread = 101 − 99 = 2 ticks</text><text x="415.0" y="143.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">mid = (101 + 99) / 2 = 100</text><text x="100.0" y="268.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">quantity resting at each price  →</text><text x="86.0" y="268.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">price</text></svg><p class="fig-cap">Every bar is a queue of real people waiting to trade at that price. Buyers stack up below, sellers above, and the untraded gap between the two best prices is the spread. Depth grows as you move away from the middle: a few brave orders near the spread, a wall of patient ones behind.</p></figure>
+<p>Read Figure 1 once more, slowly, because five of our six words are visible in it:</p>
+
+<table>
+<tr><th style="width:24mm">Word</th><th style="width:44mm">Means</th><th>In Figure 1</th></tr>
+<tr><td><b>Bid</b></td><td>a price someone will buy at</td>
+    <td>the blue side. Buyers naturally want to pay <em>less</em>, so bids sit below.</td></tr>
+<tr><td><b>Ask</b> (or offer)</td><td>a price someone will sell at</td>
+    <td>the red side. Sellers want to receive <em>more</em>, so asks sit above.</td></tr>
+<tr><td><b>Best bid / best ask</b></td><td>the highest bid, the lowest ask</td>
+    <td>99 and 101 &mdash; the two prices closest to the gap. Together they are
+        called the <em>top of book</em>, and they are the only two prices most
+        people ever look at.</td></tr>
+<tr><td><b>Spread</b></td><td>best ask &minus; best bid</td>
+    <td>101 &minus; 99 = <b>2 ticks</b>. The width of the disagreement.</td></tr>
+<tr><td><b>Mid</b></td><td>the average of the two</td>
+    <td>100. Not a price anybody is offering &mdash; a convention, our best single
+        guess at &ldquo;the&rdquo; price.</td></tr>
+<tr><td><b>Depth</b></td><td>how much size is resting</td>
+    <td>the bar lengths. 50 at the best ask, but 400 three ticks up.</td></tr>
+</table>
+
+<h3>Why the spread cannot be zero</h3>
+<p>A natural question: if buyers want to buy and sellers want to sell, why is there
+a gap at all? Because the best bid being <em>below</em> the best ask is not an
+accident &mdash; it is a mathematical necessity. If the best bid ever rose to meet
+the best ask, those two orders would immediately trade and vanish, re&euml;stablishing
+the gap. A book with a bid at or above the ask is called <b>crossed</b>, and it is a
+state that can only exist for the instant before the engine resolves it.</p>
+
+<div class="key"><span class="lab">Our first hard invariant</span>
+<p><b>best bid &lt; best ask, always, at every moment an outside observer can look.</b>
+This is one of the properties our fuzz tests will assert after every single message.
+If we ever violate it, the engine is broken &mdash; not slow, not suboptimal,
+<em>broken</em>, because it means we failed to execute a trade that both parties had
+already agreed to.</p></div>
+
+<h3>The same book, seen as a cost curve</h3>
+<p>The ladder tells you what is available at each price. Often the more useful
+question is cumulative: <em>if I keep buying until I have spent my way up to price
+P, how much will I have got?</em> That is the depth curve.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 2 — The same book as a depth curve</figcaption><svg viewBox="0 0 680 300" width="100%" role="img" aria-label="Figure 2 — The same book as a depth curve"><rect width="680" height="300" fill="#fcfcfb"/><line x1="76.0" y1="250.0" x2="640.0" y2="250.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="66.0" y="254.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><line x1="76.0" y1="197.5" x2="640.0" y2="197.5" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="66.0" y="201.5" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">400</text><line x1="76.0" y1="145.0" x2="640.0" y2="145.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="66.0" y="149.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">800</text><line x1="76.0" y1="92.5" x2="640.0" y2="92.5" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="66.0" y="96.5" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1,200</text><line x1="76.0" y1="40.0" x2="640.0" y2="40.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="66.0" y="44.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1,600</text><path d="M287.5,223.8 H217.0 V158.1 H146.5 V40.0 H76.0 V250.0 H287.5 Z" fill="#2a78d6" fill-opacity="0.16"/><path d="M428.5,243.4 H499.0 V223.8 H569.5 V171.2 H640.0 V250.0 H428.5 Z" fill="#e34948" fill-opacity="0.16"/><path d="M287.5,223.8 H217.0 V158.1 H146.5 V40.0 H76.0" fill="none" stroke="#2a78d6" stroke-width="2"/><path d="M428.5,243.4 H499.0 V223.8 H569.5 V171.2 H640.0" fill="none" stroke="#e34948" stroke-width="2"/><line x1="76.0" y1="250.0" x2="640.0" y2="250.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="76.0" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">96</text><text x="146.5" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">97</text><text x="217.0" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">98</text><text x="287.5" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">99</text><text x="358.0" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">100</text><text x="428.5" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">101</text><text x="499.0" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">102</text><text x="569.5" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">103</text><text x="640.0" y="268.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">104</text><rect x="287.5" y="40" width="141.0" height="210" fill="#f0efec" fill-opacity="0.8"/><text x="358.0" y="32.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">spread</text><text x="174.7" y="30.0" font-size="11" fill="#2a78d6" text-anchor="start" font-weight="600" style="">1,600 total bid</text><text x="541.3" y="161.2" font-size="11" fill="#e34948" text-anchor="start" font-weight="600" style="">600 total ask</text><rect x="76.0" y="14.0" width="9" height="9" rx="2" fill="#2a78d6"/><text x="90.0" y="22.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Cumulative bids</text><rect x="209.0" y="14.0" width="9" height="9" rx="2" fill="#e34948"/><text x="223.0" y="22.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Cumulative asks</text><text x="66.0" y="22.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">qty</text><text x="640.0" y="284.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">price →</text></svg><p class="fig-cap">Each step answers one question: “if I bought/sold everything up to this price, how much would I get?” The steeper the wall, the harder the book is to push. A thin, flat curve — a Legendary with almost no float — means even a small order rips through several price levels.</p></figure>
+<h3>Liquidity, defined properly</h3>
+<p><b>Liquidity</b> is the most abused word in finance. Used precisely, it means:
+<em>the ability to trade a meaningful size, quickly, without moving the price much.</em>
+It has three independent dimensions, and Figure 2 shows two of them directly:</p>
+<ul>
+<li><b>Tightness</b> &mdash; how narrow the spread is. The cost of a tiny trade.</li>
+<li><b>Depth</b> &mdash; how much size sits at each level. The cost of a large trade.</li>
+<li><b>Resiliency</b> &mdash; how fast the book refills after being eaten. Not
+visible in a snapshot; you need to watch the book over time. This one only becomes
+measurable once we have agents, in sub-project B.</li>
+</ul>
+<p>A market can be tight but shallow &mdash; a one-tick spread with only 5 units
+behind it, which is wonderful if you want 5 and useless if you want 500. This is
+precisely the situation we will engineer deliberately with Legendaries: a tiny
+float, a razor-thin book, and a chance to watch what happens to anyone who tries to
+trade size in it.</p>
+
+<div class="aside"><span class="lab">The bargain at the heart of every market</span>
+<p>Someone posting a limit order is <b>providing</b> liquidity: they are standing
+there offering everyone else the option to trade instantly. Someone sending a market
+order is <b>taking</b> it. The provider gets paid for that service &mdash; in
+expectation, roughly half the spread &mdash; and in exchange accepts the risk of
+being on the wrong side when the price moves. The taker pays the spread and buys
+certainty.</p>
+<p>The spread is therefore not a fee, and it is not friction. <b>It is the price of
+immediacy</b>, set by competition between the people willing to sell it.</p></div>
+
+<h2 class="part"><span class="num">Part 2</span>Matching &mdash; the fifteen lines
+at the centre</h2>
+<p class="standfirst">The part everyone assumes is complicated. It is not. What is
+hard is making it fast, and that is Part 4&rsquo;s problem.</p>
+
+<h3>The fairness rule: price, then time</h3>
+<p>When an incoming order could trade against several resting orders, which one wins?
+The rule is <b>price-time priority</b>, and it has exactly two clauses applied in
+order:</p>
+<ol>
+<li><b>Better price first.</b> If you are selling, whoever bids most gets served
+first. This is not charity, it is efficiency: it guarantees trades happen at the
+best available price, which is the entire point of gathering everyone in one room.</li>
+<li><b>Then earlier arrival.</b> Among orders at <em>the same</em> price, the one
+that has been waiting longest goes first. Strict first-in-first-out.</li>
+</ol>
+<p>Clause two is the interesting one, because it is a pure fairness rule with no
+efficiency justification &mdash; the exchange gets an identical outcome either way.
+It exists because a queue that anyone can jump is a queue nobody will join, and an
+exchange with no resting orders is not an exchange. <b>Time priority is the payment
+for patience</b>, and it is what makes providing liquidity worth doing at all.</p>
+
+<h3>Watching an order eat the book</h3>
+<p>Now the mechanism. An incoming order that can trade immediately is called
+<b>aggressive</b> or a <b>taker</b>; the resting orders it trades against are
+<b>passive</b>, or <b>makers</b>. The taker walks the opposite side of the book,
+cheapest first, printing a trade at each stop, until it is satisfied or the book
+runs dry.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 3 — Matching, one fill at a time</figcaption><svg viewBox="0 0 700 320" width="100%" role="img" aria-label="Figure 3 — Matching, one fill at a time"><rect width="700" height="320" fill="#fcfcfb"/><text x="20.0" y="22.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">A market order to BUY 180 walks up the ask side, oldest order at each price first</text><text x="20.0" y="50.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">① Book before</text><text x="46.0" y="77.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">103</text><path d="M54.0,62.0 H170.0 A4.0,4.0 0 0 1 174.0,66.0 V78.0 A4.0,4.0 0 0 1 170.0,82.0 H54.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M54.0,62.0 H170.0 A4.0,4.0 0 0 1 174.0,66.0 V78.0 A4.0,4.0 0 0 1 170.0,82.0 H54.0 Z" fill="#e34948"/><text x="182.0" y="77.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">400</text><text x="46.0" y="107.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">102</text><path d="M54.0,92.0 H95.0 A4.0,4.0 0 0 1 99.0,96.0 V108.0 A4.0,4.0 0 0 1 95.0,112.0 H54.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M54.0,92.0 H95.0 A4.0,4.0 0 0 1 99.0,96.0 V108.0 A4.0,4.0 0 0 1 95.0,112.0 H54.0 Z" fill="#e34948"/><text x="107.0" y="107.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">150</text><text x="46.0" y="137.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">101</text><path d="M54.0,122.0 H65.0 A4.0,4.0 0 0 1 69.0,126.0 V138.0 A4.0,4.0 0 0 1 65.0,142.0 H54.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M54.0,122.0 H65.0 A4.0,4.0 0 0 1 69.0,126.0 V138.0 A4.0,4.0 0 0 1 65.0,142.0 H54.0 Z" fill="#e34948"/><text x="77.0" y="137.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">50</text><rect x="20" y="158" width="200" height="48" rx="6" fill="#f0efec"/><text x="30.0" y="176.0" font-size="9" fill="#898781" text-anchor="start" font-weight="400" style="letter-spacing:.08em">PRINTS ON THE TAPE</text><text x="30.0" y="196.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">—</text><text x="232.0" y="110.0" font-size="20" fill="#898781" text-anchor="start" font-weight="400" style="">→</text><text x="248.0" y="50.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">② Fills 50 @ 101</text><text x="274.0" y="77.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">103</text><path d="M282.0,62.0 H398.0 A4.0,4.0 0 0 1 402.0,66.0 V78.0 A4.0,4.0 0 0 1 398.0,82.0 H282.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M282.0,62.0 H398.0 A4.0,4.0 0 0 1 402.0,66.0 V78.0 A4.0,4.0 0 0 1 398.0,82.0 H282.0 Z" fill="#e34948"/><text x="410.0" y="77.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">400</text><text x="274.0" y="107.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">102</text><path d="M282.0,92.0 H323.0 A4.0,4.0 0 0 1 327.0,96.0 V108.0 A4.0,4.0 0 0 1 323.0,112.0 H282.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M282.0,92.0 H323.0 A4.0,4.0 0 0 1 327.0,96.0 V108.0 A4.0,4.0 0 0 1 323.0,112.0 H282.0 Z" fill="#e34948"/><text x="335.0" y="107.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">150</text><text x="274.0" y="137.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">101</text><path d="M282.0,122.0 H293.0 A4.0,4.0 0 0 1 297.0,126.0 V138.0 A4.0,4.0 0 0 1 293.0,142.0 H282.0 Z" fill="#e34948" fill-opacity="0.18"/><text x="305.0" y="137.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">gone</text><rect x="248" y="158" width="200" height="48" rx="6" fill="#f0efec"/><text x="258.0" y="176.0" font-size="9" fill="#898781" text-anchor="start" font-weight="400" style="letter-spacing:.08em">PRINTS ON THE TAPE</text><text x="258.0" y="196.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">50 @ 101</text><text x="460.0" y="110.0" font-size="20" fill="#898781" text-anchor="start" font-weight="400" style="">→</text><text x="476.0" y="50.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">③ Fills 130 @ 102</text><text x="502.0" y="77.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">103</text><path d="M510.0,62.0 H626.0 A4.0,4.0 0 0 1 630.0,66.0 V78.0 A4.0,4.0 0 0 1 626.0,82.0 H510.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M510.0,62.0 H626.0 A4.0,4.0 0 0 1 630.0,66.0 V78.0 A4.0,4.0 0 0 1 626.0,82.0 H510.0 Z" fill="#e34948"/><text x="638.0" y="77.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">400</text><text x="502.0" y="107.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">102</text><path d="M510.0,92.0 H551.0 A4.0,4.0 0 0 1 555.0,96.0 V108.0 A4.0,4.0 0 0 1 551.0,112.0 H510.0 Z" fill="#e34948" fill-opacity="0.18"/><path d="M510.0,92.0 H512.0 A4.0,4.0 0 0 1 516.0,96.0 V108.0 A4.0,4.0 0 0 1 512.0,112.0 H510.0 Z" fill="#e34948"/><text x="563.0" y="107.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">20</text><text x="502.0" y="137.0" font-size="12" fill="#0b0b0b" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">101</text><path d="M510.0,122.0 H521.0 A4.0,4.0 0 0 1 525.0,126.0 V138.0 A4.0,4.0 0 0 1 521.0,142.0 H510.0 Z" fill="#e34948" fill-opacity="0.18"/><text x="533.0" y="137.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">gone</text><rect x="476" y="158" width="200" height="68" rx="6" fill="#f0efec"/><text x="486.0" y="176.0" font-size="9" fill="#898781" text-anchor="start" font-weight="400" style="letter-spacing:.08em">PRINTS ON THE TAPE</text><text x="486.0" y="196.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">50 @ 101</text><text x="486.0" y="216.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">130 @ 102</text><rect x="20" y="252" width="660" height="52" rx="6" fill="#eef4fc"/><text x="34.0" y="272.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Result: 180 bought. Average price paid = (50×101 + 130×102) / 180 = 101.72</text><text x="34.0" y="291.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">The buyer wanted 101 and got 101.72. That 0.72 is slippage — the cost of being in a hurry.</text></svg><p class="fig-cap">This is the entire engine. The incoming order (the taker) is matched against resting orders (the makers) in strict price-then-time order, printing a trade for each pairing, until it is filled or the book runs out.</p></figure>
+<h3>The single most-failed detail: whose price wins?</h3>
+<p>In Figure 3 the buyer bought at 101 and then at 102. Suppose instead of a market
+order they had sent a <em>limit</em> order to buy 180 at 105. What price should the
+first 50 trade at &mdash; 101, or 105?</p>
+<p><b>101.</b> Always the resting order&rsquo;s price, never the incoming
+order&rsquo;s. The reasoning is clean: the resting seller published terms
+(&ldquo;I will sell at 101&rdquo;) and has been standing behind them, in public,
+waiting. The arriving buyer read those terms and chose to accept them. You do not
+get to charge somebody more than they advertised because you discovered they would
+have paid it.</p>
+<p>The buyer therefore receives four ticks of <b>price improvement</b> &mdash; they
+were willing to pay 105 and paid 101. This is a real and routine occurrence, it is
+the direct reward for posting a wide limit rather than a market order, and getting it
+backwards is the most common bug in a first matching engine.</p>
+
+<h3>Partial fills and residuals</h3>
+<p>In panel ③ the incoming buyer needed 130 but the level held 150. The resting order
+is filled for 130 and <b>remains in the book with 20 left</b>, keeping its original
+place in the queue &mdash; it did nothing wrong, so it loses nothing. Correspondingly
+an order can be filled in twenty pieces at five different prices over an hour. So
+every order carries two quantities forever: what it originally asked for, and how
+much is still outstanding. Confusing those two is bug number two.</p>
+
+<h3>The whole algorithm</h3>
+<p>Here it is in full. Not a sketch &mdash; this is genuinely the complete
+description of what a matching engine does.</p>
+<pre><span class="c">// an order arrives to BUY `qty` at `limit`</span>
+while  remaining &gt; 0
+   and  book has an ask
+   and  best_ask &lt;= limit:                 <span class="c">// is there a price we can accept?</span>
+
+     resting = front of level[best_ask]      <span class="c">// front == oldest == time priority</span>
+     fill    = min(remaining, resting.remaining)
+
+     print TRADE at best_ask for fill        <span class="c">// the MAKER's price</span>
+     remaining         -= fill
+     resting.remaining -= fill
+
+     if resting.remaining == 0: remove it from the queue
+     if level is now empty:     drop the level
+
+if remaining &gt; 0:                            <span class="c">// we could not fill it all</span>
+     LIMIT  -&gt; insert at back of level[limit] <span class="c">// join the queue and wait</span>
+     MARKET -&gt; cancel the remainder           <span class="c">// nothing left to hit</span>
+</pre>
+
+<div class="key"><span class="lab">Where the difficulty actually lives</span>
+<p>Read that loop and count the operations it needs: <b>find the best price</b>,
+<b>get the front of a queue</b>, <b>remove from a queue</b>, <b>insert at the back of
+a queue</b>. Four operations. Plus one more that does not even appear above:
+<b>find an arbitrary order by its ID</b>, which is what cancelling needs.</p>
+<p><b>Those five operations are the entire engineering project.</b> The loop above
+will be written once, in an afternoon, and never meaningfully change again. Parts
+v0 through v4 of our build are five different attempts to make those five operations
+faster, and nothing else.</p></div>
+
+<h3>One more requirement: it must be repeatable</h3>
+<p>An exchange settles real obligations, so &ldquo;why did my order not fill?&rdquo;
+must have an exact answer, reproducible months later. That gives us the strongest
+constraint in the whole design: <b>determinism</b>. The same sequence of input
+messages must produce a byte-for-byte identical sequence of output events, on any
+machine, forever.</p>
+<p>Which forbids more than you would expect. No reading the wall clock inside the
+engine &mdash; time priority is established by an integer counter that ticks once per
+accepted message, not by a timestamp. No random numbers. No iterating a hash map
+whose order depends on where the allocator happened to put things. No relying on
+which thread got there first. Determinism is not a testing convenience we are being
+fastidious about; it is the property that makes the two most valuable things in the
+project possible at all:</p>
+<ul>
+<li><b>Differential testing.</b> Write the engine twice &mdash; once carefully in
+C++, once simply in Python &mdash; feed both the same million random messages, and
+demand identical output. Two independent implementations agreeing is a far stronger
+correctness claim than any hand-written test suite.</li>
+<li><b>An honest benchmark.</b> To claim v3 is faster than v0 we must prove they did
+the <em>same work</em>. Determinism lets us assert they produced identical trades, so
+the only thing that differed was the speed.</li>
+</ul>
+
+<h2 class="part"><span class="num">Part 3</span>The fiddly rules, and why each one
+exists</h2>
+<p class="standfirst">Every rule below was invented in response to somebody getting
+hurt. Knowing the injury is how you remember the rule.</p>
+
+<h3>The order types</h3>
+<table>
+<tr><th style="width:30mm">Type</th><th style="width:58mm">Behaviour</th>
+    <th>The problem it solves</th></tr>
+<tr><td><b>Limit</b></td>
+    <td>Trade what you can at your price or better; rest the remainder.</td>
+    <td>The default. Never a bad price, but possibly no fill.</td></tr>
+<tr><td><b>Market</b></td>
+    <td>Trade until filled, at any price; cancel any remainder.</td>
+    <td>Certainty of getting done. Dangerous in a thin book &mdash; see Part 5 on
+        slippage.</td></tr>
+<tr><td><b>IOC</b><br><span class="mono" style="font-size:8.6pt">immediate-or-cancel</span></td>
+    <td>Trade what you can right now at your price; cancel the rest instantly rather
+        than resting.</td>
+    <td>&ldquo;Take what&rsquo;s there, but do not leave me exposed.&rdquo; A resting
+        order broadcasts your intentions to everyone. IOC lets you take liquidity
+        without ever showing your hand.</td></tr>
+<tr><td><b>FOK</b><br><span class="mono" style="font-size:8.6pt">fill-or-kill</span></td>
+    <td>Fill the <em>entire</em> quantity immediately or do nothing at all. All or
+        nothing.</td>
+    <td>When a partial fill is worse than no fill &mdash; e.g. one leg of a
+        multi-instrument trade. Buying half a hedge leaves you more exposed than
+        buying none of it.</td></tr>
+<tr><td><b>Post-only</b></td>
+    <td>Must rest. If it would trade immediately, reject it instead.</td>
+    <td>Guarantees you are the maker, never the taker. Matters because exchanges
+        usually charge takers and pay makers a small <em>rebate</em>; a post-only
+        order is a promise you will not accidentally pay the fee.</td></tr>
+</table>
+
+<h3>Cancel and modify: the interview question</h3>
+<p>Cancel is simple to state (&ldquo;remove order 8,271,993&rdquo;) and, as Part 4
+will show, the single most performance-critical operation in the entire system.
+Modify is where the interesting question lives. Say you have an order resting in the
+queue and you want to change it. Do you keep your place in line?</p>
+
+<table>
+<tr><th style="width:56mm">You want to&hellip;</th><th style="width:34mm">Priority</th>
+    <th>Because</th></tr>
+<tr><td><b>Reduce</b> the quantity</td><td><b>Keep it</b> &mdash; stay where you are</td>
+    <td>You are asking for <em>less</em>. Nobody behind you is harmed; in fact
+        everyone behind you moves closer to the front. There is no one to compensate,
+        so there is nothing to charge you.</td></tr>
+<tr><td><b>Increase</b> the quantity</td><td><b>Lose it</b> &mdash; go to the back</td>
+    <td>The extra quantity never waited. If you kept your slot you would be inserting
+        brand-new size ahead of people who have been queuing &mdash; a strictly better
+        deal than they got, for free. That is queue-jumping.</td></tr>
+<tr><td><b>Change</b> the price</td><td><b>Lose it</b> &mdash; back of the new level</td>
+    <td>Priority is a property <em>of a price level</em>, not of you. You have
+        never queued at the new price for even a microsecond.</td></tr>
+</table>
+
+<div class="aside"><span class="lab">How to answer this in an interview</span>
+<p>Do not recite the table. State the principle and derive the table from it in real
+time: <b>time priority is compensation for exposure risk, so you keep priority
+exactly as long as you have not increased the risk anyone else is taking on your
+behalf.</b> Reducing quantity lowers your exposure; everything else raises it.</p>
+<p>Then add the implementation note, because it is what they are really probing:
+&ldquo;which means a reduce is an in-place decrement of one field, but an increase or
+a reprice is a cancel followed by a fresh insert &mdash; so I implement modify in
+terms of the two primitives I already have, rather than as a third code path that can
+disagree with them.&rdquo;</p></div>
+
+<h3>Self-trade prevention</h3>
+<p>Nothing stops your own buy order from matching your own sell order. The trade is
+economically meaningless &mdash; you pay yourself &mdash; but it is not harmless. It
+prints on the public tape, so it manufactures the appearance of activity that never
+happened. Done deliberately and repeatedly, that is <b>wash trading</b>: illegal
+market manipulation, because it fakes the volume signal other participants rely on.
+Exchanges therefore refuse the match outright. Which of the two orders gets cancelled
+is a published policy choice; we will cancel the incoming one, as it is the simpler
+rule to reason about and to test.</p>
+
+<h3>Rejections are data, not exceptions</h3>
+<p>Bad input &mdash; an unknown instrument, a zero quantity, a cancel for an order
+that already filled &mdash; produces a <b>Rejected</b> event carrying a reason code,
+and the book is left completely untouched. The engine never throws and never logs.</p>
+<p>Two reasons, and they are worth understanding because this is the kind of decision
+that reads as pedantic until it saves you. First, a function that can throw halfway
+through a match can leave the book half-updated, and a half-updated book is not
+recoverable &mdash; you have lost the audit trail, which was the whole point.
+Second, an error path that is <em>data</em> gets exercised by the same tests as
+everything else, whereas an error path that is an exception is the code nobody ever
+tests. Malformed input is not an exceptional circumstance in a system open to the
+public. It is Tuesday.</p>
+
+<h2 class="part"><span class="num">Part 4</span>Why this is a hard engineering
+problem</h2>
+<p class="standfirst">The algorithm is fifteen lines. The performance work is weeks.
+This part explains that gap, because the gap is the reason the project is worth
+building.</p>
+
+<h3>The traffic is not what you would guess</h3>
+<p>Ask someone to guess the message mix at a real exchange and they will say mostly
+orders, some trades, a few cancels. It is almost exactly inverted. A representative
+mix looks like this:</p>
+
+<table>
+<tr><th>Message</th><th class="num" style="width:26mm">Share</th><th>Consequence for us</th></tr>
+<tr><td><b>Cancel</b></td><td class="num">~90%</td>
+    <td>Automated strategies re-quote constantly &mdash; post, reconsider, pull, repost,
+        thousands of times a second. <b>This is the operation to optimise.</b></td></tr>
+<tr><td><b>New order</b></td><td class="num">~9%</td>
+    <td>Needs a fast insert at the back of a queue.</td></tr>
+<tr><td><b>Actual trade</b></td><td class="num">~1%</td>
+    <td>The rarest event in the system, and the one everyone thinks about first.</td></tr>
+</table>
+
+<p>Sit with that for a second, because it inverts the natural design instinct. If you
+set out to build a matching engine you would optimise <em>matching</em>. But roughly
+nine in ten messages never touch the matching loop at all &mdash; they are somebody
+saying &ldquo;forget order 8,271,993&rdquo;. So the hot path is not the loop from
+Part 2. The hot path is <b>find one order among millions, by ID, and unlink
+it &mdash; right now.</b> Everything below follows from that sentence.</p>
+
+<div class="flag"><span class="lab">Caveat on these figures</span>
+<p>The 90/9/1 split is the widely-reported shape of message traffic on major
+electronic venues, quoted here as an order of magnitude rather than a precise
+statistic &mdash; exact ratios vary enormously by venue, instrument and year. We
+should cite a specific published figure in the final README rather than this
+approximation, and we will be able to measure our <em>own</em> mix exactly, which is
+what the benchmark actually needs.</p></div>
+
+<h3>The reason fast code is not about instruction count</h3>
+<p>Here is the fact that reorganises how you think about performance. A modern CPU
+core executes several billion instructions per second. It can also be made to sit
+completely idle for a hundred nanoseconds &mdash; several hundred instructions&rsquo;
+worth of time &mdash; waiting for a single number to arrive from memory.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 4 — Why memory layout is the whole game</figcaption><svg viewBox="0 0 700 236" width="100%" role="img" aria-label="Figure 4 — Why memory layout is the whole game"><rect width="700" height="236" fill="#fcfcfb"/><text x="132.0" y="24.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Time to fetch one piece of data, if it lives in…</text><text x="120.0" y="57.0" font-size="11" fill="#0b0b0b" text-anchor="end" font-weight="600" style="">L1 cache</text><path d="M132.0,40.0 H132.4 A4.0,4.0 0 0 1 136.4,44.0 V60.0 A4.0,4.0 0 0 1 132.4,64.0 H132.0 Z" fill="#1baf7a"/><text x="146.4" y="57.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">≈1 ns</text><text x="202.4" y="57.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">(you can barely see this bar — that's the point)</text><text x="120.0" y="99.0" font-size="11" fill="#0b0b0b" text-anchor="end" font-weight="600" style="">L2 cache</text><path d="M132.0,82.0 H145.6 A4.0,4.0 0 0 1 149.6,86.0 V102.0 A4.0,4.0 0 0 1 145.6,106.0 H132.0 Z" fill="#1baf7a"/><text x="159.6" y="99.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">≈4 ns</text><text x="120.0" y="141.0" font-size="11" fill="#0b0b0b" text-anchor="end" font-weight="600" style="">L3 cache</text><path d="M132.0,124.0 H216.0 A4.0,4.0 0 0 1 220.0,128.0 V144.0 A4.0,4.0 0 0 1 216.0,148.0 H132.0 Z" fill="#eb6834"/><text x="230.0" y="141.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">≈20 ns</text><text x="120.0" y="183.0" font-size="11" fill="#0b0b0b" text-anchor="end" font-weight="600" style="">Main memory (DRAM)</text><path d="M132.0,166.0 H568.0 A4.0,4.0 0 0 1 572.0,170.0 V186.0 A4.0,4.0 0 0 1 568.0,190.0 H132.0 Z" fill="#e34948"/><text x="582.0" y="183.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">≈100 ns</text><line x1="132.0" y1="36.0" x2="132.0" y2="200.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="132.0" y="226.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">A cache miss costs ~100× a cache hit. This single fact is why v1–v3 exist.</text></svg><p class="fig-cap">Modern CPUs are starved, not slow. A processor can do a hundred arithmetic operations in the time it takes to wait for one value that isn't in cache. Order-of-magnitude figures for a typical desktop CPU.</p></figure>
+<p>The CPU never fetches one value. It fetches a 64-byte <b>cache line</b> and hopes
+you wanted the neighbours too. So the question that determines your speed is not
+<em>how many operations do I perform</em>, it is <b>how often is the thing I need
+next already sitting next to the thing I just touched</b>. Which makes it a question
+about memory <em>layout</em>, not about algorithms.</p>
+
+<p>This is why <code>std::map</code> &mdash; a perfectly good, O(log n), textbook-correct
+data structure &mdash; is the wrong tool. Each node was allocated separately,
+whenever it happened to be created, so the nodes are scattered across memory. Walking
+from one price level to the next is a <b>pointer chase</b>: read a pointer, wait for
+memory, read the next pointer, wait again. The asymptotic complexity is fine. The
+constant factor is a disaster.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 5 — The same book, laid out two ways</figcaption><svg viewBox="0 0 700 300" width="100%" role="img" aria-label="Figure 5 — The same book, laid out two ways"><rect width="700" height="300" fill="#fcfcfb"/><text x="70.0" y="42.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">v0:  std::map&lt;Price, deque&lt;Order&gt;&gt;</text><text x="70.0" y="58.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">each node landed wherever the allocator had room — walking the book jumps all over RAM</text><rect x="70.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="84.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="98.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="112.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="126.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="140.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="154.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="168.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="182.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="196.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="210.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="224.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="238.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="252.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="266.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="280.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="294.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="308.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="322.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="336.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="350.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="364.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="378.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="392.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="406.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="420.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="434.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="448.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="462.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="476.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="490.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="504.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="518.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="532.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="546.0" y="84" width="12" height="20" rx="2" fill="#e34948"/><rect x="560.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="574.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="588.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="602.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><rect x="616.0" y="84" width="12" height="20" rx="2" fill="#f0efec"/><line x1="69.0" y1="79.0" x2="69.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="181.0" y1="79.0" x2="181.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="293.0" y1="79.0" x2="293.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="405.0" y1="79.0" x2="405.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="517.0" y1="79.0" x2="517.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="629.0" y1="79.0" x2="629.0" y2="109.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><path d="M118.0,84 Q286.0,60.0 454.0,84" fill="none" stroke="#e34948" stroke-width="1.5" opacity="0.75"/><path d="M454.0,84 Q342.0,60.0 230.0,84" fill="none" stroke="#e34948" stroke-width="1.5" opacity="0.75"/><path d="M230.0,84 Q391.0,60.0 552.0,84" fill="none" stroke="#e34948" stroke-width="1.5" opacity="0.75"/><path d="M552.0,84 Q356.0,60.0 160.0,84" fill="none" stroke="#e34948" stroke-width="1.5" opacity="0.75"/><path d="M160.0,84 Q251.0,60.0 342.0,84" fill="none" stroke="#e34948" stroke-width="1.5" opacity="0.75"/><text x="644.0" y="99.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">6 misses</text><text x="70.0" y="168.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">v1:  Order levels[MAX_TICKS]</text><text x="70.0" y="184.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">price IS the array index — neighbouring prices are neighbouring bytes, and the prefetcher sees you coming</text><rect x="70.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="84.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="98.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="112.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="126.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="140.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="154.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="168.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="182.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="196.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="210.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="224.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="238.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="252.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="266.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="280.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="294.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="308.0" y="210" width="12" height="20" rx="2" fill="#1baf7a"/><rect x="322.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="336.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="350.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="364.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="378.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="392.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="406.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="420.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="434.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="448.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="462.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="476.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="490.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="504.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="518.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="532.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="546.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="560.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="574.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="588.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="602.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><rect x="616.0" y="210" width="12" height="20" rx="2" fill="#f0efec"/><line x1="69.0" y1="205.0" x2="69.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="181.0" y1="205.0" x2="181.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="293.0" y1="205.0" x2="293.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="405.0" y1="205.0" x2="405.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="517.0" y1="205.0" x2="517.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="629.0" y1="205.0" x2="629.0" y2="235.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><path d="M244.0,210 Q251.0,186.0 258.0,210" fill="none" stroke="#1baf7a" stroke-width="1.5" opacity="0.75"/><path d="M258.0,210 Q265.0,186.0 272.0,210" fill="none" stroke="#1baf7a" stroke-width="1.5" opacity="0.75"/><path d="M272.0,210 Q279.0,186.0 286.0,210" fill="none" stroke="#1baf7a" stroke-width="1.5" opacity="0.75"/><path d="M286.0,210 Q293.0,186.0 300.0,210" fill="none" stroke="#1baf7a" stroke-width="1.5" opacity="0.75"/><path d="M300.0,210 Q307.0,186.0 314.0,210" fill="none" stroke="#1baf7a" stroke-width="1.5" opacity="0.75"/><text x="644.0" y="225.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1 miss</text><text x="70.0" y="268.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Same algorithm. Same big-O. Roughly 6× fewer trips to memory.</text><text x="70.0" y="284.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">Dashed boxes are 64-byte cache lines: the CPU always fetches a whole line, never one value.</text></svg><p class="fig-cap">A tree stores its nodes wherever malloc found space, so traversing it is a pointer chase: fetch, wait, fetch, wait. An array indexed by price is contiguous, so the hardware prefetcher loads the next levels before you ask.</p></figure>
+<p>And the fix is available to us because of a fact about prices specifically:
+<b>prices are discrete</b>. They move in ticks, and a tick count is an integer. So
+&ldquo;the book&rdquo; can simply be an array with one slot per possible price, and
+finding a price level becomes address arithmetic &mdash; no search, no pointers, no
+tree. This is the observation the entire optimisation programme rests on, and it is
+also the reason Part 1&rsquo;s insistence that prices are integers and never floats
+was not fussiness. An array cannot be indexed by 100.35.</p>
+
+<h3>The five versions, and what each one buys</h3>
+<table>
+<tr><th style="width:13mm">Ver</th><th style="width:52mm">Change</th>
+    <th>The specific problem it attacks</th></tr>
+<tr><td class="mono"><b>v0</b></td><td><code>std::map&lt;Price, deque&lt;Order&gt;&gt;</code></td>
+    <td>None &mdash; it is the honest baseline, and we keep it forever. Without a
+        slow version there is no story, only an assertion.</td></tr>
+<tr><td class="mono"><b>v1</b></td><td>Array indexed by tick</td>
+    <td>Pointer chasing and tree rebalancing. Finding a level becomes arithmetic.
+        Best bid/ask tracked with a moving pointer or a bitmask so we never scan
+        for it.</td></tr>
+<tr><td class="mono"><b>v2</b></td><td>Intrusive linked list + object pool</td>
+    <td><code>malloc</code> on the hot path. Every allocation is a function call
+        that may take a lock and may wander off to the OS. We pre-allocate all the
+        order slots once and hand them out from a free list, so steady-state
+        operation allocates nothing at all. &ldquo;Intrusive&rdquo; means the
+        list pointers live inside the order object, so an order and its links
+        arrive in the same cache line.</td></tr>
+<tr><td class="mono"><b>v3</b></td><td>Open-addressing hash: ID &rarr; node*</td>
+    <td><b>The big one.</b> Cancel, our ~90% case, goes from &ldquo;search the
+        book&rdquo; to one hash lookup plus two pointer writes to unlink. Open
+        addressing rather than <code>std::unordered_map</code> because the latter is
+        a linked list per bucket &mdash; more pointer chasing, exactly what we are
+        trying to escape.</td></tr>
+<tr><td class="mono"><b>v4</b></td><td>Lock-free SPSC ring buffer</td>
+    <td>Stretch goal. Separates the thread reading the network from the thread doing
+        the matching, so neither waits on the other. Requires cache-line-aligning the
+        two shared indices, or the two threads fight over one cache line and you get
+        <b>false sharing</b> &mdash; a slowdown with no logical cause, and a genuinely
+        good thing to have debugged once.</td></tr>
+</table>
+
+<h3>Measuring it without fooling ourselves</h3>
+<p>A benchmark is a claim, and most benchmark claims are wrong. Ours has to survive
+someone hostile reading it, so:</p>
+<ul>
+<li><b>Report the distribution, never the average.</b> An average latency hides
+exactly the thing that matters. If one order in a thousand takes fifty times as long,
+your mean barely moves &mdash; and in a real market that one order is where you get
+picked off. So we quote <b>p50, p99, p99.9 and max</b>, and we show the histogram.</li>
+<li><b>Identical input to every version.</b> One recorded message file, replayed into
+each version, with the outputs asserted byte-identical. Determinism is what makes
+this possible.</li>
+<li><b>Measure outside the engine.</b> Timing instrumentation inside the matching
+loop would change what it is measuring.</li>
+<li><b>Discard the warm-up.</b> The first few thousand messages measure a cold cache
+and an un-JITed branch predictor, not steady-state behaviour.</li>
+</ul>
+<figure class="fig "><figcaption class="fig-title">Figure 6 — What a latency measurement looks like</figcaption><svg viewBox="0 0 700 392" width="100%" role="img" aria-label="Figure 6 — What a latency measurement looks like"><rect width="700" height="392" fill="#fcfcfb"/><text x="66.0" y="16.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">v0 — std::map</text><path d="M189.0,166.0 V166.0 A0.0,0.0 0 0 1 189.0,166.0 H198.1 A0.0,0.0 0 0 1 198.1,166.0 V166.0 Z" fill="#eb6834"/><path d="M200.1,166.0 V166.0 A0.0,0.0 0 0 1 200.1,166.0 H209.2 A0.0,0.0 0 0 1 209.2,166.0 V166.0 Z" fill="#eb6834"/><path d="M211.2,166.0 V166.0 A0.0,0.0 0 0 1 211.2,166.0 H220.2 A0.0,0.0 0 0 1 220.3,166.0 V166.0 Z" fill="#eb6834"/><path d="M222.3,166.0 V166.0 A0.1,0.1 0 0 1 222.3,165.9 H231.3 A0.1,0.1 0 0 1 231.4,166.0 V166.0 Z" fill="#eb6834"/><path d="M233.4,166.0 V166.0 A0.2,0.2 0 0 1 233.6,165.8 H242.2 A0.2,0.2 0 0 1 242.5,166.0 V166.0 Z" fill="#eb6834"/><path d="M244.5,166.0 V166.0 A0.7,0.7 0 0 1 245.2,165.3 H252.8 A0.7,0.7 0 0 1 253.5,166.0 V166.0 Z" fill="#eb6834"/><path d="M255.5,166.0 V166.0 A1.9,1.9 0 0 1 257.5,164.1 H262.7 A1.9,1.9 0 0 1 264.6,166.0 V166.0 Z" fill="#eb6834"/><path d="M266.6,166.0 V164.9 A2.0,2.0 0 0 1 268.6,162.9 H273.7 A2.0,2.0 0 0 1 275.7,164.9 V166.0 Z" fill="#eb6834"/><path d="M277.7,166.0 V161.8 A2.0,2.0 0 0 1 279.7,159.8 H284.8 A2.0,2.0 0 0 1 286.8,161.8 V166.0 Z" fill="#eb6834"/><path d="M288.8,166.0 V155.9 A2.0,2.0 0 0 1 290.8,153.9 H295.9 A2.0,2.0 0 0 1 297.9,155.9 V166.0 Z" fill="#eb6834"/><path d="M299.9,166.0 V148.6 A2.0,2.0 0 0 1 301.9,146.6 H307.0 A2.0,2.0 0 0 1 309.0,148.6 V166.0 Z" fill="#eb6834"/><path d="M311.0,166.0 V137.1 A2.0,2.0 0 0 1 313.0,135.1 H318.1 A2.0,2.0 0 0 1 320.1,137.1 V166.0 Z" fill="#eb6834"/><path d="M322.1,166.0 V121.7 A2.0,2.0 0 0 1 324.1,119.7 H329.2 A2.0,2.0 0 0 1 331.2,121.7 V166.0 Z" fill="#eb6834"/><path d="M333.2,166.0 V105.5 A2.0,2.0 0 0 1 335.2,103.5 H340.3 A2.0,2.0 0 0 1 342.3,105.5 V166.0 Z" fill="#eb6834"/><path d="M344.3,166.0 V88.7 A2.0,2.0 0 0 1 346.3,86.7 H351.4 A2.0,2.0 0 0 1 353.4,88.7 V166.0 Z" fill="#eb6834"/><path d="M355.4,166.0 V73.7 A2.0,2.0 0 0 1 357.4,71.7 H362.5 A2.0,2.0 0 0 1 364.5,73.7 V166.0 Z" fill="#eb6834"/><path d="M366.5,166.0 V64.2 A2.0,2.0 0 0 1 368.5,62.2 H373.5 A2.0,2.0 0 0 1 375.5,64.2 V166.0 Z" fill="#eb6834"/><path d="M377.5,166.0 V64.0 A2.0,2.0 0 0 1 379.5,62.0 H384.6 A2.0,2.0 0 0 1 386.6,64.0 V166.0 Z" fill="#eb6834"/><path d="M388.6,166.0 V70.7 A2.0,2.0 0 0 1 390.6,68.7 H395.7 A2.0,2.0 0 0 1 397.7,70.7 V166.0 Z" fill="#eb6834"/><path d="M399.7,166.0 V83.9 A2.0,2.0 0 0 1 401.7,81.9 H406.8 A2.0,2.0 0 0 1 408.8,83.9 V166.0 Z" fill="#eb6834"/><path d="M410.8,166.0 V98.4 A2.0,2.0 0 0 1 412.8,96.4 H417.9 A2.0,2.0 0 0 1 419.9,98.4 V166.0 Z" fill="#eb6834"/><path d="M421.9,166.0 V114.8 A2.0,2.0 0 0 1 423.9,112.8 H429.0 A2.0,2.0 0 0 1 431.0,114.8 V166.0 Z" fill="#eb6834"/><path d="M433.0,166.0 V131.3 A2.0,2.0 0 0 1 435.0,129.3 H440.1 A2.0,2.0 0 0 1 442.1,131.3 V166.0 Z" fill="#eb6834"/><path d="M444.1,166.0 V143.6 A2.0,2.0 0 0 1 446.1,141.6 H451.2 A2.0,2.0 0 0 1 453.2,143.6 V166.0 Z" fill="#eb6834"/><path d="M455.2,166.0 V153.8 A2.0,2.0 0 0 1 457.2,151.8 H462.3 A2.0,2.0 0 0 1 464.3,153.8 V166.0 Z" fill="#eb6834"/><path d="M466.3,166.0 V159.6 A2.0,2.0 0 0 1 468.3,157.6 H473.4 A2.0,2.0 0 0 1 475.4,159.6 V166.0 Z" fill="#eb6834"/><path d="M477.4,166.0 V163.3 A2.0,2.0 0 0 1 479.4,161.3 H484.5 A2.0,2.0 0 0 1 486.5,163.3 V166.0 Z" fill="#eb6834"/><path d="M488.5,166.0 V165.0 A2.0,2.0 0 0 1 490.5,163.0 H495.5 A2.0,2.0 0 0 1 497.5,165.0 V166.0 Z" fill="#eb6834"/><path d="M499.5,166.0 V166.0 A1.9,1.9 0 0 1 501.4,164.1 H506.8 A1.9,1.9 0 0 1 508.6,166.0 V166.0 Z" fill="#eb6834"/><path d="M510.6,166.0 V166.0 A1.6,1.6 0 0 1 512.2,164.4 H518.2 A1.6,1.6 0 0 1 519.7,166.0 V166.0 Z" fill="#eb6834"/><path d="M521.7,166.0 V166.0 A1.6,1.6 0 0 1 523.3,164.4 H529.2 A1.6,1.6 0 0 1 530.8,166.0 V166.0 Z" fill="#eb6834"/><path d="M532.8,166.0 V166.0 A1.2,1.2 0 0 1 534.0,164.8 H540.7 A1.2,1.2 0 0 1 541.9,166.0 V166.0 Z" fill="#eb6834"/><path d="M543.9,166.0 V166.0 A1.2,1.2 0 0 1 545.1,164.8 H551.8 A1.2,1.2 0 0 1 553.0,166.0 V166.0 Z" fill="#eb6834"/><path d="M555.0,166.0 V166.0 A1.1,1.1 0 0 1 556.1,164.9 H563.0 A1.1,1.1 0 0 1 564.1,166.0 V166.0 Z" fill="#eb6834"/><path d="M566.1,166.0 V166.0 A1.0,1.0 0 0 1 567.1,165.0 H574.2 A1.0,1.0 0 0 1 575.2,166.0 V166.0 Z" fill="#eb6834"/><path d="M577.2,166.0 V166.0 A0.9,0.9 0 0 1 578.1,165.1 H585.4 A0.9,0.9 0 0 1 586.3,166.0 V166.0 Z" fill="#eb6834"/><path d="M588.3,166.0 V166.0 A0.8,0.8 0 0 1 589.1,165.2 H596.6 A0.8,0.8 0 0 1 597.4,166.0 V166.0 Z" fill="#eb6834"/><path d="M599.4,166.0 V166.0 A0.3,0.3 0 0 1 599.7,165.7 H608.2 A0.3,0.3 0 0 1 608.5,166.0 V166.0 Z" fill="#eb6834"/><path d="M610.5,166.0 V166.0 A0.2,0.2 0 0 1 610.7,165.8 H619.3 A0.2,0.2 0 0 1 619.5,166.0 V166.0 Z" fill="#eb6834"/><path d="M621.5,166.0 V166.0 A0.1,0.1 0 0 1 621.7,165.9 H630.5 A0.1,0.1 0 0 1 630.6,166.0 V166.0 Z" fill="#eb6834"/><path d="M632.6,166.0 V166.0 A0.0,0.0 0 0 1 632.7,166.0 H641.7 A0.0,0.0 0 0 1 641.7,166.0 V166.0 Z" fill="#eb6834"/><path d="M643.7,166.0 V166.0 A0.1,0.1 0 0 1 643.8,165.9 H652.7 A0.1,0.1 0 0 1 652.8,166.0 V166.0 Z" fill="#eb6834"/><path d="M654.8,166.0 V166.0 A0.0,0.0 0 0 1 654.9,166.0 H663.9 A0.0,0.0 0 0 1 663.9,166.0 V166.0 Z" fill="#eb6834"/><path d="M665.9,166.0 V166.0 A0.0,0.0 0 0 1 666.0,166.0 H675.0 A0.0,0.0 0 0 1 675.0,166.0 V166.0 Z" fill="#eb6834"/><line x1="66.0" y1="166.0" x2="676.0" y2="166.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><line x1="379.2" y1="33.0" x2="379.2" y2="166.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="384.2" y="34.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p50  694ns</text><line x1="512.2" y1="45.0" x2="512.2" y2="166.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="517.2" y="46.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p99  3,130ns</text><line x1="595.4" y1="57.0" x2="595.4" y2="166.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="600.4" y="58.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p99.9  8,029ns</text><text x="208.1" y="181.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">100</text><text x="411.5" y="181.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1,000</text><text x="614.8" y="181.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10,000</text><text x="56.0" y="166.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><text x="56.0" y="70.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">count</text><text x="66.0" y="204.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">v3 — ladder + pool + hash</text><path d="M89.2,354.0 V354.0 A0.0,0.0 0 0 1 89.2,354.0 H98.3 A0.0,0.0 0 0 1 98.3,354.0 V354.0 Z" fill="#2a78d6"/><path d="M100.3,354.0 V354.0 A0.1,0.1 0 0 1 100.4,353.9 H109.3 A0.1,0.1 0 0 1 109.4,354.0 V354.0 Z" fill="#2a78d6"/><path d="M111.4,354.0 V354.0 A0.5,0.5 0 0 1 111.9,353.5 H120.0 A0.5,0.5 0 0 1 120.5,354.0 V354.0 Z" fill="#2a78d6"/><path d="M122.5,354.0 V353.9 A2.0,2.0 0 0 1 124.5,351.9 H129.5 A2.0,2.0 0 0 1 131.5,353.9 V354.0 Z" fill="#2a78d6"/><path d="M133.5,354.0 V349.5 A2.0,2.0 0 0 1 135.5,347.5 H140.6 A2.0,2.0 0 0 1 142.6,349.5 V354.0 Z" fill="#2a78d6"/><path d="M144.6,354.0 V339.3 A2.0,2.0 0 0 1 146.6,337.3 H151.7 A2.0,2.0 0 0 1 153.7,339.3 V354.0 Z" fill="#2a78d6"/><path d="M155.7,354.0 V320.9 A2.0,2.0 0 0 1 157.7,318.9 H162.8 A2.0,2.0 0 0 1 164.8,320.9 V354.0 Z" fill="#2a78d6"/><path d="M166.8,354.0 V293.6 A2.0,2.0 0 0 1 168.8,291.6 H173.9 A2.0,2.0 0 0 1 175.9,293.6 V354.0 Z" fill="#2a78d6"/><path d="M177.9,354.0 V268.7 A2.0,2.0 0 0 1 179.9,266.7 H185.0 A2.0,2.0 0 0 1 187.0,268.7 V354.0 Z" fill="#2a78d6"/><path d="M189.0,354.0 V252.0 A2.0,2.0 0 0 1 191.0,250.0 H196.1 A2.0,2.0 0 0 1 198.1,252.0 V354.0 Z" fill="#2a78d6"/><path d="M200.1,354.0 V255.8 A2.0,2.0 0 0 1 202.1,253.8 H207.2 A2.0,2.0 0 0 1 209.2,255.8 V354.0 Z" fill="#2a78d6"/><path d="M211.2,354.0 V277.9 A2.0,2.0 0 0 1 213.2,275.9 H218.3 A2.0,2.0 0 0 1 220.3,277.9 V354.0 Z" fill="#2a78d6"/><path d="M222.3,354.0 V305.0 A2.0,2.0 0 0 1 224.3,303.0 H229.4 A2.0,2.0 0 0 1 231.4,305.0 V354.0 Z" fill="#2a78d6"/><path d="M233.4,354.0 V329.5 A2.0,2.0 0 0 1 235.4,327.5 H240.5 A2.0,2.0 0 0 1 242.5,329.5 V354.0 Z" fill="#2a78d6"/><path d="M244.5,354.0 V344.4 A2.0,2.0 0 0 1 246.5,342.4 H251.5 A2.0,2.0 0 0 1 253.5,344.4 V354.0 Z" fill="#2a78d6"/><path d="M255.5,354.0 V351.7 A2.0,2.0 0 0 1 257.5,349.7 H262.6 A2.0,2.0 0 0 1 264.6,351.7 V354.0 Z" fill="#2a78d6"/><path d="M266.6,354.0 V354.0 A1.3,1.3 0 0 1 267.9,352.7 H274.4 A1.3,1.3 0 0 1 275.7,354.0 V354.0 Z" fill="#2a78d6"/><path d="M277.7,354.0 V354.0 A0.4,0.4 0 0 1 278.1,353.6 H286.4 A0.4,0.4 0 0 1 286.8,354.0 V354.0 Z" fill="#2a78d6"/><path d="M288.8,354.0 V354.0 A0.0,0.0 0 0 1 288.9,354.0 H297.9 A0.0,0.0 0 0 1 297.9,354.0 V354.0 Z" fill="#2a78d6"/><line x1="66.0" y1="354.0" x2="676.0" y2="354.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><line x1="197.0" y1="221.0" x2="197.0" y2="354.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="202.0" y="222.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p50  88ns</text><line x1="254.7" y1="233.0" x2="254.7" y2="354.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="259.7" y="234.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p99  169ns</text><line x1="274.0" y1="245.0" x2="274.0" y2="354.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="3 3" stroke-linecap="butt"/><text x="279.0" y="246.0" font-size="9.5" fill="#0b0b0b" text-anchor="start" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">p99.9  211ns</text><text x="208.1" y="369.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">100</text><text x="411.5" y="369.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1,000</text><text x="614.8" y="369.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10,000</text><text x="56.0" y="354.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><text x="56.0" y="258.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">count</text><text x="676.0" y="386.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">nanoseconds per order, log scale →</text></svg><p class="fig-cap">Two panels, one shared axis — never two y-scales on one chart. The whole distribution matters, not the average: the long right tail is where money is lost, which is why the numbers you quote are p99 and p99.9.</p><p class="fig-note">ILLUSTRATIVE SHAPE ONLY — simulated to show the form of the result. We have not built the engine yet; producing these numbers honestly is the entire point of sub-project C.</p></figure>
+<div class="flag"><span class="lab">A real constraint we have to plan around</span>
+<p>You are on an Apple-silicon Mac, and two of the tools the spec assumes do not
+exist there. <code>rdtsc</code> is an x86 instruction; the ARM equivalent is reading
+the <code>cntvct_el0</code> system register, which ticks at a different and lower
+frequency. And <code>perf stat</code> &mdash; which is how you would get cache-miss
+and branch-misprediction counts &mdash; is Linux-only. macOS offers
+<code>xctrace</code>, which is considerably less direct.</p>
+<p>This does not block sub-project A at all, and I have kept the timing abstraction
+outside the engine so it cannot contaminate the design. But before sub-project C we
+need to choose: a cheap Linux cloud box for the benchmark runs, or a local VM, or
+accept weaker profiling evidence on macOS. My recommendation is the Linux box &mdash;
+<code>perf stat</code> output showing the cache-miss rate falling between v0 and v1
+is one of the most persuasive artefacts this project can produce, and it is worth a
+few dollars.</p></div>
+
+<h2 class="part"><span class="num">Part 5</span>The mathematics, explained slowly</h2>
+<p class="standfirst">Ten pieces of maths, in dependency order. Each one is stated,
+then taken apart term by term, then justified. None of it requires anything beyond
+first-year calculus and probability.</p>
+
+<h3>5.1 &nbsp;Returns &mdash; and why we take logarithms</h3>
+<p>Prices themselves are nearly useless for analysis: knowing Charizard is at 4,300
+tells you nothing without knowing where it was. What carries information is
+<b>change</b>, expressed as a fraction so that instruments of different price can be
+compared. That is a <b>return</b>, and we almost always use the log form:</p>
+<div class="eq">r<sub>t</sub> &nbsp;=&nbsp; ln <span class="frac"><span class="n">P<sub>t</sub></span><span class="d">P<sub>t&minus;1</sub></span></span><span class="where"><b>P<sub>t</sub></b> the price now &middot; <b>P<sub>t&minus;1</sub></b> the price one step ago &middot; <b>ln</b> the natural logarithm</span></div>
+<p>Three reasons for the logarithm, and the first is the one that matters:</p>
+<ul>
+<li><b>Log returns add up; simple returns do not.</b> Go up 10% then down 10% and you
+are at 99, not 100 &mdash; so simple returns cannot be summed over time. Log returns
+can: the return over a week is exactly the sum of the daily log returns. This makes
+every subsequent formula cleaner.</li>
+<li><b>They are symmetric.</b> A halving and a doubling are &minus;0.693 and +0.693.
+With simple returns they are &minus;50% and +100%, which makes an unbiased process
+look biased.</li>
+<li><b>They approximate percentages for small moves.</b> ln(1.01) = 0.00995, so for
+the small moves that dominate tick data you can read a log return as a percentage
+and be right to three decimal places.</li>
+</ul>
+
+<h3>5.2 &nbsp;Volatility &mdash; the size of the wiggle</h3>
+<p><b>Volatility</b> is simply the standard deviation of returns. It measures how far
+the price typically moves per unit of time, ignoring direction entirely.</p>
+<div class="eq">&sigma;<sup>2</sup> &nbsp;=&nbsp; <span class="frac"><span class="n">1</span><span class="d">n &minus; 1</span></span> &Sigma;<sub>i</sub> (r<sub>i</sub> &minus; r&#772;)<sup>2</sup><span class="where">This is the <b>variance</b>; volatility &sigma; is its square root. <b>r&#772;</b> the mean return &middot; <b>n</b> the number of observations &middot; the <b>n&minus;1</b> rather than <b>n</b> is Bessel&rsquo;s correction, because we estimated the mean from the same data</span></div>
+<p>Volatility is the single most important number in this project, because it appears
+in nearly every formula that follows. It sets how wide a market maker should quote
+(5.8), how large the price impact of a trade is (5.5), and whether a divergence
+between two instruments is meaningful or noise (5.10). It is also <em>not
+constant</em> &mdash; that fact is a whole stylized fact of its own, in 5.6.</p>
+
+<h3>5.3 &nbsp;Mid price, and the better version nobody teaches first</h3>
+<p>The obvious estimate of &ldquo;the&rdquo; price is the midpoint:</p>
+<div class="eq">mid &nbsp;=&nbsp; <span class="frac"><span class="n">P<sub>bid</sub> + P<sub>ask</sub></span><span class="d">2</span></span></div>
+<p>It is fine, and it is also throwing away information. Look again at Figure 1: 200
+resting on the bid at 99, but only 50 on the ask at 101. Far more people want to buy
+than to sell. The mid says 100, but 100 is clearly not where this book is heading.
+The <b>microprice</b> (or weighted mid) captures that:</p>
+<div class="eq">micro &nbsp;=&nbsp; <span class="frac"><span class="n">P<sub>bid</sub>&middot;Q<sub>ask</sub> &nbsp;+&nbsp; P<sub>ask</sub>&middot;Q<sub>bid</sub></span><span class="d">Q<sub>bid</sub> + Q<sub>ask</sub></span></span><span class="where">Note the <b>crossed</b> weighting: each price is weighted by the quantity on the <em>opposite</em> side.</span></div>
+<p>The crossing looks like a typo and is the entire idea. A large bid quantity is
+evidence of buying pressure, so it should pull the fair value <em>up</em>, towards
+the ask. Working Figure 1 through: (99&times;50 + 101&times;200) / 250 = 100.6 &mdash;
+noticeably above the mid of 100, which is exactly right, because that book is
+lopsided towards buyers.</p>
+<div class="aside"><span class="lab">Why this matters to us</span>
+<p>Any agent that quotes around the plain mid in a lopsided book is systematically
+quoting too low on one side, and will be picked off there. The microprice is a
+one-line change that makes our market maker meaningfully less naive, and it is the
+kind of detail that shows you have thought about the book rather than just read about
+it.</p></div>
+
+<h3>5.4 &nbsp;What a trade actually costs: VWAP and slippage</h3>
+<p>Return to Figure 3 &mdash; the market order to buy 180. It did not trade at one
+price; it traded 50 at 101 and 130 at 102. The single number describing what it paid
+is the <b>volume-weighted average price</b>:</p>
+<div class="eq">VWAP &nbsp;=&nbsp; <span class="frac"><span class="n">&Sigma;<sub>i</sub> p<sub>i</sub> q<sub>i</sub></span><span class="d">&Sigma;<sub>i</sub> q<sub>i</sub></span></span> &nbsp;=&nbsp; <span class="frac"><span class="n">50&times;101 &nbsp;+&nbsp; 130&times;102</span><span class="d">180</span></span> &nbsp;=&nbsp; <span class="frac"><span class="n">18,310</span><span class="d">180</span></span> &nbsp;=&nbsp; <b>101.72</b></div>
+<p><b>Slippage</b> is the gap between the price you hoped for and the VWAP you got.
+Measured against the mid of 100 it is 1.72 ticks; measured against the best ask of
+101 it is 0.72. Both are quoted in practice, so always say which. That 0.72 is the
+cost of size &mdash; the first 50 got the good price and the next 130 did not.</p>
+<div class="key"><span class="lab">This is the Legendary experiment in one number</span>
+<p>Slippage is determined entirely by the shape of the depth curve. Give a Legendary
+a float of a few hundred units and its book will be three levels deep, so an order
+of any consequence sweeps through all of them and the slippage is enormous. Same
+engine, same order, wildly different cost &mdash; because of nothing but market
+structure. This is the microstructure lesson the theme lets us make visible.</p></div>
+
+<h3>5.5 &nbsp;Market impact: the square-root law</h3>
+<p>Slippage measures what one order paid. <b>Impact</b> asks the broader question:
+how far does the price <em>move</em> when someone trades size Q? The empirical answer
+is remarkably consistent across every market anyone has measured, and it is not
+linear:</p>
+<div class="eq">&Delta;P &nbsp;&asymp;&nbsp; Y &middot; &sigma; &middot; &radic;<span class="rad">Q&thinsp;/&thinsp;V</span><span class="where"><b>Q</b> your order size &middot; <b>V</b> the instrument&rsquo;s total volume over the same period &middot; <b>&sigma;</b> its volatility &middot; <b>Y</b> a dimensionless constant, empirically around 0.5&ndash;1</span></div>
+<p>Read the formula in words: <em>impact is volatility, scaled by the square root of
+the fraction of the market you are.</em> The square root is the surprising part and
+the useful part.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 9 — Trading costs grow like a square root, not a straight line</figcaption><svg viewBox="0 0 660 300" width="100%" role="img" aria-label="Figure 9 — Trading costs grow like a square root, not a straight line"><rect width="660" height="300" fill="#fcfcfb"/><line x1="74.0" y1="240.0" x2="626.0" y2="240.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="65.0" y="244.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0.0</text><line x1="74.0" y1="186.1" x2="626.0" y2="186.1" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="65.0" y="190.1" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0.1</text><line x1="74.0" y1="132.2" x2="626.0" y2="132.2" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="65.0" y="136.2" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0.2</text><line x1="74.0" y1="78.3" x2="626.0" y2="78.3" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="65.0" y="82.3" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0.3</text><path d="M74.0,240.0 L626.0,71.3" fill="none" stroke="#898781" stroke-width="2" stroke-dasharray="5 3"/><polyline points="74.0,240.0 78.6,224.5 83.3,218.1 87.9,213.2 92.6,209.1 97.2,205.4 101.8,202.1 106.5,199.1 111.1,196.3 115.7,193.6 120.4,191.1 125.0,188.7 129.7,186.4 134.3,184.2 138.9,182.1 143.6,180.1 148.2,178.1 152.9,176.2 157.5,174.4 162.1,172.6 166.8,170.8 171.4,169.1 176.1,167.5 180.7,165.8 185.3,164.2 190.0,162.7 194.6,161.1 199.2,159.6 203.9,158.2 208.5,156.7 213.2,155.3 217.8,153.9 222.4,152.5 227.1,151.2 231.7,149.8 236.4,148.5 241.0,147.2 245.6,145.9 250.3,144.7 254.9,143.4 259.5,142.2 264.2,141.0 268.8,139.8 273.5,138.6 278.1,137.4 282.7,136.3 287.4,135.1 292.0,134.0 296.7,132.9 301.3,131.7 305.9,130.6 310.6,129.6 315.2,128.5 319.8,127.4 324.5,126.4 329.1,125.3 333.8,124.3 338.4,123.2 343.0,122.2 347.7,121.2 352.3,120.2 357.0,119.2 361.6,118.2 366.2,117.3 370.9,116.3 375.5,115.3 380.2,114.4 384.8,113.4 389.4,112.5 394.1,111.5 398.7,110.6 403.3,109.7 408.0,108.8 412.6,107.9 417.3,107.0 421.9,106.1 426.5,105.2 431.2,104.3 435.8,103.4 440.5,102.5 445.1,101.7 449.7,100.8 454.4,100.0 459.0,99.1 463.6,98.3 468.3,97.4 472.9,96.6 477.6,95.8 482.2,94.9 486.8,94.1 491.5,93.3 496.1,92.5 500.8,91.7 505.4,90.9 510.0,90.1 514.7,89.3 519.3,88.5 523.9,87.7 528.6,86.9 533.2,86.1 537.9,85.4 542.5,84.6 547.1,83.8 551.8,83.1 556.4,82.3 561.1,81.5 565.7,80.8 570.3,80.0 575.0,79.3 579.6,78.5 584.3,77.8 588.9,77.1 593.5,76.3 598.2,75.6 602.8,74.9 607.4,74.2 612.1,73.4 616.7,72.7 621.4,72.0 626.0,71.3" fill="none" stroke="#2a78d6" stroke-width="2"/><circle cx="131.4" cy="182.1" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="213.1" cy="154.4" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="518.5" cy="77.5" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="400.0" cy="150.7" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="136.0" cy="177.1" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="319.3" cy="139.4" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="344.2" cy="143.6" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="171.5" cy="167.0" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="482.4" cy="83.7" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="146.5" cy="181.8" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="296.7" cy="145.5" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="364.6" cy="117.3" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="318.0" cy="128.5" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="402.5" cy="89.7" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="484.2" cy="82.6" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="602.3" cy="71.4" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="238.8" cy="136.6" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="435.9" cy="106.5" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="461.7" cy="113.0" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="243.4" cy="140.5" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="85.8" cy="213.7" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="611.6" cy="77.4" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="246.5" cy="153.8" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="254.9" cy="141.0" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="567.4" cy="124.3" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="401.6" cy="100.2" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="340.0" cy="116.6" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="503.4" cy="118.0" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="101.5" cy="202.1" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="467.5" cy="112.7" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="287.5" cy="126.3" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="134.2" cy="196.8" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="442.3" cy="116.1" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><circle cx="588.9" cy="64.3" r="3.6" fill="#2a78d6" fill-opacity="0.45" stroke="#fcfcfb" stroke-width="2"/><line x1="129.2" y1="186.7" x2="129.2" y2="240.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="74.0" y1="186.7" x2="129.2" y2="186.7" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><circle cx="129.2" cy="186.7" r="5" fill="#0b0b0b"/><text x="139.2" y="178.7" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">4× the size…  (0.10σ)</text><line x1="294.8" y1="133.3" x2="294.8" y2="240.0" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><line x1="74.0" y1="133.3" x2="294.8" y2="133.3" stroke="#0b0b0b" stroke-width="1" stroke-dasharray="2 2" stroke-linecap="butt"/><circle cx="294.8" cy="133.3" r="5" fill="#0b0b0b"/><text x="304.8" y="125.3" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">…only 2× the cost  (0.20σ)</text><line x1="74.0" y1="240.0" x2="626.0" y2="240.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="74.0" y="256.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0%</text><text x="212.0" y="256.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">5%</text><text x="350.0" y="256.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10%</text><text x="488.0" y="256.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">15%</text><text x="626.0" y="256.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">20%</text><rect x="74.0" y="16.0" width="9" height="9" rx="2" fill="#2a78d6"/><text x="88.0" y="24.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Square-root law:  impact = Y·σ·√(Q/V)</text><line x1="374" y1="20" x2="400" y2="20" stroke="#898781" stroke-width="2" stroke-dasharray="5 3"/><text x="406.0" y="24.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">if impact were proportional to size</text><text x="65.0" y="28.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">impact (σ)</text><text x="626.0" y="284.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">order size as % of daily volume →</text></svg><p class="fig-cap">One of the most robust empirical laws in finance, found across every market anyone has checked. It is why large orders are sliced up and fed in slowly, and it is a law our simulated market either reproduces or does not.</p><p class="fig-note">Curve is the theoretical law; dots are simulated observations scattered around it, showing the noise a real measurement has.</p></figure>
+<p><b>Why a square root and not a straight line?</b> There is no single agreed
+derivation, which is itself worth knowing &mdash; this is an empirical law that
+theory has chased rather than predicted. The most intuitive account: the book is not
+a fixed queue you consume, it is a population of latent traders who react. As you
+buy, some sellers who were not previously interested are drawn in by the higher
+price. Your own trading partly refills the book ahead of you, so the marginal cost of
+each extra unit falls. Concavity follows.</p>
+<p>The practical consequence is enormous and is why execution is a profession:
+splitting one large order into many small ones spread over time genuinely costs less
+than sending it at once, because you keep re-entering at the cheap end of the curve.
+Whether our simulated market reproduces a square root &mdash; rather than a line, or
+some other exponent &mdash; is one of the sharpest tests of whether the agent
+population is behaving like real people.</p>
+
+<h3>5.6 &nbsp;Stylized facts: the fingerprints of a real market</h3>
+<p>Financial return series, across every asset class and century anyone has checked,
+share a set of statistical properties. They are called <b>stylized facts</b>. They
+matter to us for a specific reason: <b>we are not going to programme them in.</b>
+They should <em>emerge</em> from agents interacting. If they do, our simulation has
+captured something true about how markets work. If they do not, we have built an
+expensive random number generator.</p>
+
+<h4>Fact 1 &mdash; Returns are fat-tailed</h4>
+<p>Extreme moves happen far more often than a bell curve allows. The standard measure
+is <b>kurtosis</b>, the normalised fourth moment:</p>
+<div class="eq">&kappa; &nbsp;=&nbsp; <span class="frac"><span class="n">E[(r &minus; &mu;)<sup>4</sup>]</span><span class="d">&sigma;<sup>4</sup></span></span><span class="where">A Normal distribution has &kappa; = 3 exactly. Anything above 3 has fatter tails; financial returns typically land between 4 and 20.</span></div>
+<p>The fourth power is what makes this a tail measure: a move of 5&sigma; contributes
+625 times as much as a move of 1&sigma;, so &kappa; is dominated almost entirely by
+the rare extremes and barely notices the ordinary days.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 7 — Real markets are not bell curves</figcaption><svg viewBox="0 0 680 300" width="100%" role="img" aria-label="Figure 7 — Real markets are not bell curves"><rect width="680" height="300" fill="#fcfcfb"/><line x1="64.0" y1="223.0" x2="650.0" y2="223.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="55.0" y="227.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1</text><line x1="64.0" y1="171.4" x2="650.0" y2="171.4" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="55.0" y="175.4" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10</text><line x1="64.0" y1="104.3" x2="650.0" y2="104.3" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="55.0" y="108.3" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">100</text><line x1="64.0" y1="34.8" x2="650.0" y2="34.8" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="55.0" y="38.8" font-size="10" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1,000</text><path d="M129.1,244.0 V225.0 A2.0,2.0 0 0 1 131.1,223.0 H134.2 A2.0,2.0 0 0 1 136.2,225.0 V244.0 Z" fill="#2a78d6"/><path d="M156.6,244.0 V225.0 A2.0,2.0 0 0 1 158.6,223.0 H161.7 A2.0,2.0 0 0 1 163.7,225.0 V244.0 Z" fill="#2a78d6"/><path d="M184.0,244.0 V225.0 A2.0,2.0 0 0 1 186.0,223.0 H189.2 A2.0,2.0 0 0 1 191.2,225.0 V244.0 Z" fill="#2a78d6"/><path d="M193.2,244.0 V204.0 A2.0,2.0 0 0 1 195.2,202.0 H198.3 A2.0,2.0 0 0 1 200.3,204.0 V244.0 Z" fill="#2a78d6"/><path d="M202.3,244.0 V212.7 A2.0,2.0 0 0 1 204.3,210.7 H207.5 A2.0,2.0 0 0 1 209.5,212.7 V244.0 Z" fill="#2a78d6"/><path d="M211.5,244.0 V225.0 A2.0,2.0 0 0 1 213.5,223.0 H216.7 A2.0,2.0 0 0 1 218.7,225.0 V244.0 Z" fill="#2a78d6"/><path d="M220.7,244.0 V187.1 A2.0,2.0 0 0 1 222.7,185.1 H225.8 A2.0,2.0 0 0 1 227.8,187.1 V244.0 Z" fill="#2a78d6"/><path d="M229.8,244.0 V179.5 A2.0,2.0 0 0 1 231.8,177.5 H235.0 A2.0,2.0 0 0 1 237.0,179.5 V244.0 Z" fill="#2a78d6"/><path d="M239.0,244.0 V179.5 A2.0,2.0 0 0 1 241.0,177.5 H244.1 A2.0,2.0 0 0 1 246.1,179.5 V244.0 Z" fill="#2a78d6"/><path d="M248.1,244.0 V160.2 A2.0,2.0 0 0 1 250.1,158.2 H253.3 A2.0,2.0 0 0 1 255.3,160.2 V244.0 Z" fill="#2a78d6"/><path d="M257.3,244.0 V153.8 A2.0,2.0 0 0 1 259.3,151.8 H262.4 A2.0,2.0 0 0 1 264.4,153.8 V244.0 Z" fill="#2a78d6"/><path d="M266.4,244.0 V147.4 A2.0,2.0 0 0 1 268.4,145.4 H271.6 A2.0,2.0 0 0 1 273.6,147.4 V244.0 Z" fill="#2a78d6"/><path d="M275.6,244.0 V128.2 A2.0,2.0 0 0 1 277.6,126.2 H280.8 A2.0,2.0 0 0 1 282.8,128.2 V244.0 Z" fill="#2a78d6"/><path d="M284.8,244.0 V122.0 A2.0,2.0 0 0 1 286.8,120.0 H289.9 A2.0,2.0 0 0 1 291.9,122.0 V244.0 Z" fill="#2a78d6"/><path d="M293.9,244.0 V104.5 A2.0,2.0 0 0 1 295.9,102.5 H299.1 A2.0,2.0 0 0 1 301.1,104.5 V244.0 Z" fill="#2a78d6"/><path d="M303.1,244.0 V91.4 A2.0,2.0 0 0 1 305.1,89.4 H308.2 A2.0,2.0 0 0 1 310.2,91.4 V244.0 Z" fill="#2a78d6"/><path d="M312.2,244.0 V82.3 A2.0,2.0 0 0 1 314.2,80.3 H317.4 A2.0,2.0 0 0 1 319.4,82.3 V244.0 Z" fill="#2a78d6"/><path d="M321.4,244.0 V69.6 A2.0,2.0 0 0 1 323.4,67.6 H326.5 A2.0,2.0 0 0 1 328.5,69.6 V244.0 Z" fill="#2a78d6"/><path d="M330.5,244.0 V61.2 A2.0,2.0 0 0 1 332.5,59.2 H335.7 A2.0,2.0 0 0 1 337.7,61.2 V244.0 Z" fill="#2a78d6"/><path d="M339.7,244.0 V52.3 A2.0,2.0 0 0 1 341.7,50.3 H344.8 A2.0,2.0 0 0 1 346.8,52.3 V244.0 Z" fill="#2a78d6"/><path d="M348.8,244.0 V48.0 A2.0,2.0 0 0 1 350.8,46.0 H354.0 A2.0,2.0 0 0 1 356.0,48.0 V244.0 Z" fill="#2a78d6"/><path d="M358.0,244.0 V48.9 A2.0,2.0 0 0 1 360.0,46.9 H363.2 A2.0,2.0 0 0 1 365.2,48.9 V244.0 Z" fill="#2a78d6"/><path d="M367.2,244.0 V52.6 A2.0,2.0 0 0 1 369.2,50.6 H372.3 A2.0,2.0 0 0 1 374.3,52.6 V244.0 Z" fill="#2a78d6"/><path d="M376.3,244.0 V59.3 A2.0,2.0 0 0 1 378.3,57.3 H381.5 A2.0,2.0 0 0 1 383.5,59.3 V244.0 Z" fill="#2a78d6"/><path d="M385.5,244.0 V70.5 A2.0,2.0 0 0 1 387.5,68.5 H390.6 A2.0,2.0 0 0 1 392.6,70.5 V244.0 Z" fill="#2a78d6"/><path d="M394.6,244.0 V85.1 A2.0,2.0 0 0 1 396.6,83.1 H399.8 A2.0,2.0 0 0 1 401.8,85.1 V244.0 Z" fill="#2a78d6"/><path d="M403.8,244.0 V95.1 A2.0,2.0 0 0 1 405.8,93.1 H408.9 A2.0,2.0 0 0 1 410.9,95.1 V244.0 Z" fill="#2a78d6"/><path d="M412.9,244.0 V104.0 A2.0,2.0 0 0 1 414.9,102.0 H418.1 A2.0,2.0 0 0 1 420.1,104.0 V244.0 Z" fill="#2a78d6"/><path d="M422.1,244.0 V122.5 A2.0,2.0 0 0 1 424.1,120.5 H427.2 A2.0,2.0 0 0 1 429.2,122.5 V244.0 Z" fill="#2a78d6"/><path d="M431.2,244.0 V136.7 A2.0,2.0 0 0 1 433.2,134.7 H436.4 A2.0,2.0 0 0 1 438.4,136.7 V244.0 Z" fill="#2a78d6"/><path d="M440.4,244.0 V141.1 A2.0,2.0 0 0 1 442.4,139.1 H445.6 A2.0,2.0 0 0 1 447.6,141.1 V244.0 Z" fill="#2a78d6"/><path d="M449.6,244.0 V144.0 A2.0,2.0 0 0 1 451.6,142.0 H454.7 A2.0,2.0 0 0 1 456.7,144.0 V244.0 Z" fill="#2a78d6"/><path d="M458.7,244.0 V158.5 A2.0,2.0 0 0 1 460.7,156.5 H463.9 A2.0,2.0 0 0 1 465.9,158.5 V244.0 Z" fill="#2a78d6"/><path d="M467.9,244.0 V166.1 A2.0,2.0 0 0 1 469.9,164.1 H473.0 A2.0,2.0 0 0 1 475.0,166.1 V244.0 Z" fill="#2a78d6"/><path d="M477.0,244.0 V204.0 A2.0,2.0 0 0 1 479.0,202.0 H482.2 A2.0,2.0 0 0 1 484.2,204.0 V244.0 Z" fill="#2a78d6"/><path d="M486.2,244.0 V179.5 A2.0,2.0 0 0 1 488.2,177.5 H491.3 A2.0,2.0 0 0 1 493.3,179.5 V244.0 Z" fill="#2a78d6"/><path d="M495.3,244.0 V197.3 A2.0,2.0 0 0 1 497.3,195.3 H500.5 A2.0,2.0 0 0 1 502.5,197.3 V244.0 Z" fill="#2a78d6"/><path d="M504.5,244.0 V204.0 A2.0,2.0 0 0 1 506.5,202.0 H509.7 A2.0,2.0 0 0 1 511.7,204.0 V244.0 Z" fill="#2a78d6"/><path d="M513.7,244.0 V204.0 A2.0,2.0 0 0 1 515.7,202.0 H518.8 A2.0,2.0 0 0 1 520.8,204.0 V244.0 Z" fill="#2a78d6"/><path d="M522.8,244.0 V225.0 A2.0,2.0 0 0 1 524.8,223.0 H528.0 A2.0,2.0 0 0 1 530.0,225.0 V244.0 Z" fill="#2a78d6"/><path d="M532.0,244.0 V225.0 A2.0,2.0 0 0 1 534.0,223.0 H537.1 A2.0,2.0 0 0 1 539.1,225.0 V244.0 Z" fill="#2a78d6"/><path d="M541.1,244.0 V197.3 A2.0,2.0 0 0 1 543.1,195.3 H546.3 A2.0,2.0 0 0 1 548.3,197.3 V244.0 Z" fill="#2a78d6"/><path d="M586.9,244.0 V225.0 A2.0,2.0 0 0 1 588.9,223.0 H592.1 A2.0,2.0 0 0 1 594.1,225.0 V244.0 Z" fill="#2a78d6"/><polyline points="196.8,242.9 205.9,240.8 215.1,236.0 224.2,226.7 233.4,212.4 242.5,194.3 251.7,174.9 260.9,155.7 270.0,137.5 279.2,120.9 288.3,105.9 297.5,92.8 306.6,81.5 315.8,72.1 325.0,64.5 334.1,58.9 343.3,55.1 352.4,53.2 361.6,53.2 370.7,55.1 379.9,58.9 389.0,64.5 398.2,72.1 407.4,81.5 416.5,92.8 425.7,105.9 434.8,120.9 444.0,137.5 453.1,155.7 462.3,174.9 471.5,194.3 480.6,212.4 489.8,226.7 498.9,236.0 508.1,240.8 517.2,242.9" fill="none" stroke="#0b0b0b" stroke-width="2" stroke-dasharray="5 3"/><line x1="64.0" y1="244.0" x2="650.0" y2="244.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="64.0" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-8σ</text><text x="137.2" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-6σ</text><text x="210.5" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-4σ</text><text x="283.8" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-2σ</text><text x="357.0" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><text x="430.2" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+2σ</text><text x="503.5" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+4σ</text><text x="576.8" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+6σ</text><text x="650.0" y="260.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+8σ</text><text x="122.6" y="142.0" font-size="10" fill="#e34948" text-anchor="middle" font-weight="600" style="">fat tail</text><path d="M122.6,148 L122.6,172" stroke="#e34948" stroke-width="1.5"/><text x="591.4" y="142.0" font-size="10" fill="#e34948" text-anchor="middle" font-weight="600" style="">fat tail</text><path d="M591.4,148 L591.4,172" stroke="#e34948" stroke-width="1.5"/><rect x="64.0" y="16.0" width="9" height="9" rx="2" fill="#2a78d6"/><text x="78.0" y="24.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Simulated returns</text><line x1="244" y1="20" x2="270" y2="20" stroke="#0b0b0b" stroke-width="2" stroke-dasharray="5 3"/><text x="276.0" y="24.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Normal distribution (same σ)</text><text x="55.0" y="28.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">count</text><text x="650.0" y="288.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">return, in standard deviations →</text></svg><p class="fig-cap">Log vertical scale. The dashed line is what a Normal distribution predicts; the bars are what actually happens. Beyond about ±4σ the Normal says “never”, and reality says “Tuesday”. Measured kurtosis here is 5.81 against 3.00 for a Normal.</p><p class="fig-note">Computed from a simulated GARCH(1,1) series with Student-t shocks — the same statistical test we will run against our engine's real output.</p></figure>
+<p>The chart above is a genuinely simulated series, and its kurtosis is
+<b>5.81</b> against 3.00 for a Normal. Notice what that means on a
+log scale: out past &plusmn;5&sigma; the dashed Normal curve has effectively hit
+zero &mdash; it is claiming such days are impossible &mdash; while the bars are
+still clearly there. Assuming normality is not a small error at the tails. It is a
+categorical one, and it is the mistake behind a good number of famous blow-ups.</p>
+
+<h4>Fact 2 &mdash; Direction is unpredictable, but size is not</h4>
+<p>The tool for both halves of that sentence is the <b>autocorrelation function</b>
+&mdash; how much a series resembles itself, shifted by k steps:</p>
+<div class="eq">&rho;(k) &nbsp;=&nbsp; <span class="frac"><span class="n">&Sigma;<sub>t</sub> (r<sub>t</sub> &minus; r&#772;)(r<sub>t+k</sub> &minus; r&#772;)</span><span class="d">&Sigma;<sub>t</sub> (r<sub>t</sub> &minus; r&#772;)<sup>2</sup></span></span><span class="where">&rho;(k) = 1 means perfectly self-similar at lag k; 0 means no linear relationship at all.</span></div>
+<p>Apply it twice, and you get one of the most elegant results in the field.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 8 — Volatility clusters; direction does not</figcaption><svg viewBox="0 0 690 278" width="100%" role="img" aria-label="Figure 8 — Volatility clusters; direction does not"><rect width="690" height="278" fill="#fcfcfb"/><text x="56.0" y="30.0" font-size="11.5" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Autocorrelation of returns</text><text x="56.0" y="46.0" font-size="10" fill="#52514e" text-anchor="start" font-weight="400" style="">≈ 0 — direction is unpredictable</text><rect x="56" y="123.8" width="250" height="12.3" fill="#f0efec"/><line x1="56.0" y1="83.3" x2="306.0" y2="83.3" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="48.0" y="87.3" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+0.2</text><line x1="56.0" y1="130.0" x2="306.0" y2="130.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="48.0" y="134.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><line x1="56.0" y1="176.7" x2="306.0" y2="176.7" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="48.0" y="180.7" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-0.2</text><path d="M57.0,131.3 V131.3 A1.3,1.3 0 0 1 58.3,130.0 H66.2 A1.3,1.3 0 0 1 67.5,131.3 V131.3 Z" fill="#2a78d6"/><path d="M69.5,133.4 V131.5 A1.5,1.5 0 0 1 71.0,130.0 H78.5 A1.5,1.5 0 0 1 80.0,131.5 V133.4 Z" fill="#2a78d6"/><path d="M82.0,130.0 V123.2 A1.5,1.5 0 0 1 83.5,121.7 H91.0 A1.5,1.5 0 0 1 92.5,123.2 V130.0 Z" fill="#2a78d6"/><path d="M94.5,131.0 V131.0 A1.0,1.0 0 0 1 95.5,130.0 H104.0 A1.0,1.0 0 0 1 105.0,131.0 V131.0 Z" fill="#2a78d6"/><path d="M107.0,130.0 V130.0 A1.1,1.1 0 0 1 108.1,128.9 H116.4 A1.1,1.1 0 0 1 117.5,130.0 V130.0 Z" fill="#2a78d6"/><path d="M119.5,135.1 V131.5 A1.5,1.5 0 0 1 121.0,130.0 H128.5 A1.5,1.5 0 0 1 130.0,131.5 V135.1 Z" fill="#2a78d6"/><path d="M132.0,132.1 V131.5 A1.5,1.5 0 0 1 133.5,130.0 H141.0 A1.5,1.5 0 0 1 142.5,131.5 V132.1 Z" fill="#2a78d6"/><path d="M144.5,131.9 V131.5 A1.5,1.5 0 0 1 146.0,130.0 H153.5 A1.5,1.5 0 0 1 155.0,131.5 V131.9 Z" fill="#2a78d6"/><path d="M157.0,130.0 V130.0 A1.0,1.0 0 0 1 158.0,129.0 H166.5 A1.0,1.0 0 0 1 167.5,130.0 V130.0 Z" fill="#2a78d6"/><path d="M169.5,130.0 V130.0 A0.9,0.9 0 0 1 170.4,129.1 H179.1 A0.9,0.9 0 0 1 180.0,130.0 V130.0 Z" fill="#2a78d6"/><path d="M182.0,130.0 V127.6 A1.5,1.5 0 0 1 183.5,126.1 H191.0 A1.5,1.5 0 0 1 192.5,127.6 V130.0 Z" fill="#2a78d6"/><path d="M194.5,130.0 V128.3 A1.5,1.5 0 0 1 196.0,126.8 H203.5 A1.5,1.5 0 0 1 205.0,128.3 V130.0 Z" fill="#2a78d6"/><path d="M207.0,134.0 V131.5 A1.5,1.5 0 0 1 208.5,130.0 H216.0 A1.5,1.5 0 0 1 217.5,131.5 V134.0 Z" fill="#2a78d6"/><path d="M219.5,130.0 V130.0 A0.5,0.5 0 0 1 220.0,129.5 H229.5 A0.5,0.5 0 0 1 230.0,130.0 V130.0 Z" fill="#2a78d6"/><path d="M232.0,133.4 V131.5 A1.5,1.5 0 0 1 233.5,130.0 H241.0 A1.5,1.5 0 0 1 242.5,131.5 V133.4 Z" fill="#2a78d6"/><path d="M244.5,130.0 V123.9 A1.5,1.5 0 0 1 246.0,122.4 H253.5 A1.5,1.5 0 0 1 255.0,123.9 V130.0 Z" fill="#2a78d6"/><path d="M257.0,130.0 V126.2 A1.5,1.5 0 0 1 258.5,124.7 H266.0 A1.5,1.5 0 0 1 267.5,126.2 V130.0 Z" fill="#2a78d6"/><path d="M269.5,130.0 V128.0 A1.5,1.5 0 0 1 271.0,126.5 H278.5 A1.5,1.5 0 0 1 280.0,128.0 V130.0 Z" fill="#2a78d6"/><path d="M282.0,130.0 V129.7 A1.5,1.5 0 0 1 283.5,128.2 H291.0 A1.5,1.5 0 0 1 292.5,129.7 V130.0 Z" fill="#2a78d6"/><path d="M294.5,131.8 V131.5 A1.5,1.5 0 0 1 296.0,130.0 H303.5 A1.5,1.5 0 0 1 305.0,131.5 V131.8 Z" fill="#2a78d6"/><text x="62.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1</text><text x="112.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">5</text><text x="174.8" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10</text><text x="237.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">15</text><text x="299.8" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">20</text><text x="181.0" y="246.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">lag (trades)</text><text x="404.0" y="30.0" font-size="11.5" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Autocorrelation of |returns|</text><text x="404.0" y="46.0" font-size="10" fill="#52514e" text-anchor="start" font-weight="400" style="">&gt; 0 for many lags — size is predictable</text><rect x="404" y="123.8" width="250" height="12.3" fill="#f0efec"/><line x1="404.0" y1="83.3" x2="654.0" y2="83.3" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="396.0" y="87.3" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+0.2</text><line x1="404.0" y1="130.0" x2="654.0" y2="130.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="396.0" y="134.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><line x1="404.0" y1="176.7" x2="654.0" y2="176.7" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="396.0" y="180.7" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-0.2</text><path d="M405.0,130.0 V99.8 A1.5,1.5 0 0 1 406.5,98.3 H414.0 A1.5,1.5 0 0 1 415.5,99.8 V130.0 Z" fill="#eb6834"/><path d="M417.5,130.0 V96.7 A1.5,1.5 0 0 1 419.0,95.2 H426.5 A1.5,1.5 0 0 1 428.0,96.7 V130.0 Z" fill="#eb6834"/><path d="M430.0,130.0 V99.1 A1.5,1.5 0 0 1 431.5,97.6 H439.0 A1.5,1.5 0 0 1 440.5,99.1 V130.0 Z" fill="#eb6834"/><path d="M442.5,130.0 V102.5 A1.5,1.5 0 0 1 444.0,101.0 H451.5 A1.5,1.5 0 0 1 453.0,102.5 V130.0 Z" fill="#eb6834"/><path d="M455.0,130.0 V98.2 A1.5,1.5 0 0 1 456.5,96.7 H464.0 A1.5,1.5 0 0 1 465.5,98.2 V130.0 Z" fill="#eb6834"/><path d="M467.5,130.0 V98.4 A1.5,1.5 0 0 1 469.0,96.9 H476.5 A1.5,1.5 0 0 1 478.0,98.4 V130.0 Z" fill="#eb6834"/><path d="M480.0,130.0 V100.9 A1.5,1.5 0 0 1 481.5,99.4 H489.0 A1.5,1.5 0 0 1 490.5,100.9 V130.0 Z" fill="#eb6834"/><path d="M492.5,130.0 V99.7 A1.5,1.5 0 0 1 494.0,98.2 H501.5 A1.5,1.5 0 0 1 503.0,99.7 V130.0 Z" fill="#eb6834"/><path d="M505.0,130.0 V103.2 A1.5,1.5 0 0 1 506.5,101.7 H514.0 A1.5,1.5 0 0 1 515.5,103.2 V130.0 Z" fill="#eb6834"/><path d="M517.5,130.0 V108.9 A1.5,1.5 0 0 1 519.0,107.4 H526.5 A1.5,1.5 0 0 1 528.0,108.9 V130.0 Z" fill="#eb6834"/><path d="M530.0,130.0 V103.1 A1.5,1.5 0 0 1 531.5,101.6 H539.0 A1.5,1.5 0 0 1 540.5,103.1 V130.0 Z" fill="#eb6834"/><path d="M542.5,130.0 V109.7 A1.5,1.5 0 0 1 544.0,108.2 H551.5 A1.5,1.5 0 0 1 553.0,109.7 V130.0 Z" fill="#eb6834"/><path d="M555.0,130.0 V109.4 A1.5,1.5 0 0 1 556.5,107.9 H564.0 A1.5,1.5 0 0 1 565.5,109.4 V130.0 Z" fill="#eb6834"/><path d="M567.5,130.0 V113.2 A1.5,1.5 0 0 1 569.0,111.7 H576.5 A1.5,1.5 0 0 1 578.0,113.2 V130.0 Z" fill="#eb6834"/><path d="M580.0,130.0 V112.7 A1.5,1.5 0 0 1 581.5,111.2 H589.0 A1.5,1.5 0 0 1 590.5,112.7 V130.0 Z" fill="#eb6834"/><path d="M592.5,130.0 V115.3 A1.5,1.5 0 0 1 594.0,113.8 H601.5 A1.5,1.5 0 0 1 603.0,115.3 V130.0 Z" fill="#eb6834"/><path d="M605.0,130.0 V112.6 A1.5,1.5 0 0 1 606.5,111.1 H614.0 A1.5,1.5 0 0 1 615.5,112.6 V130.0 Z" fill="#eb6834"/><path d="M617.5,130.0 V111.4 A1.5,1.5 0 0 1 619.0,109.9 H626.5 A1.5,1.5 0 0 1 628.0,111.4 V130.0 Z" fill="#eb6834"/><path d="M630.0,130.0 V111.0 A1.5,1.5 0 0 1 631.5,109.5 H639.0 A1.5,1.5 0 0 1 640.5,111.0 V130.0 Z" fill="#eb6834"/><path d="M642.5,130.0 V116.8 A1.5,1.5 0 0 1 644.0,115.3 H651.5 A1.5,1.5 0 0 1 653.0,116.8 V130.0 Z" fill="#eb6834"/><text x="410.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">1</text><text x="460.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">5</text><text x="522.8" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">10</text><text x="585.2" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">15</text><text x="647.8" y="232.0" font-size="9.5" fill="#898781" text-anchor="middle" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">20</text><text x="529.0" y="246.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">lag (trades)</text><text x="56.0" y="268.0" font-size="10" fill="#898781" text-anchor="start" font-weight="400" style="">Grey band = the range where a value is statistically indistinguishable from zero.</text></svg><p class="fig-cap">The left panel is why you cannot make money by guessing the next tick. The right panel is why you can still make money selling insurance against volatility: quiet periods follow quiet periods, storms follow storms.</p></figure>
+<ul>
+<li><b>&rho;(k) of returns &asymp; 0</b> for every k. Whether the price just went up
+tells you nothing about whether it goes up next. This is not an accident, it is an
+equilibrium: any reliable pattern would be traded away by exactly the arbitrageurs we
+are going to build. <b>Market efficiency is a consequence of competition, not an
+assumption.</b></li>
+<li><b>&rho;(k) of |returns| &gt; 0</b>, and it decays slowly over many lags. The
+<em>magnitude</em> is highly predictable. Big moves cluster with big moves, quiet with
+quiet. This is <b>volatility clustering</b>, and its intuition is simple: the arrival
+of news is itself bursty, and it takes the market a while to digest each burst.</li>
+</ul>
+<p>So you cannot forecast direction but you <em>can</em> forecast turbulence &mdash;
+which is precisely why the market maker in 5.8 has &sigma; in its formula and widens
+its quotes when &sigma; rises. That agent is monetising Fact 2.</p>
+
+<h3>5.7 &nbsp;When do orders arrive? Poisson processes</h3>
+<p>Our noise traders need arrival times. The standard model for &ldquo;events
+happening independently at some average rate&rdquo; is the <b>Poisson process</b>:</p>
+<div class="eq">P(N events in time t) &nbsp;=&nbsp; <span class="frac"><span class="n">(&lambda;t)<sup>k</sup> e<sup>&minus;&lambda;t</sup></span><span class="d">k!</span></span><span class="where"><b>&lambda;</b> the average rate (orders per second) &middot; <b>k</b> the number of events</span></div>
+<p>The property we actually use is the companion result: if events are Poisson at rate
+&lambda;, the <b>gaps between them are exponentially distributed</b> with mean
+1/&lambda;. Which gives a one-line generator &mdash; draw U uniform on (0,1] and the
+wait until the next order is:</p>
+<div class="eq">&Delta;t &nbsp;=&nbsp; &minus;<span class="frac"><span class="n">ln U</span><span class="d">&lambda;</span></span></div>
+<p>Why is this the right model? Because of the <b>memoryless</b> property: how long
+you have already waited tells you nothing about how much longer you will wait. That
+is exactly true when arrivals are a great many independent participants each deciding
+on their own, which is what a crowd of noise traders is. It is a poor model for
+<em>informed</em> flow, which is bursty and correlated &mdash; and that mismatch is a
+feature, since it gives our momentum and arbitrage agents a genuinely different
+statistical signature from the background.</p>
+
+<h3>5.8 &nbsp;Avellaneda&ndash;Stoikov: how to quote when you can lose money</h3>
+<p>This is the most substantial piece of mathematics in the project, so here is the
+problem it solves before the formulas.</p>
+<p>You are a market maker. You post a bid and an ask, and you earn the spread each
+time both get filled. Simple enough &mdash; so why not quote a one-tick spread and
+capture enormous volume? Two reasons, pulling in opposite directions:</p>
+<ul>
+<li><b>Quote too wide</b> and nobody trades with you. You earn a large spread on
+almost no volume.</li>
+<li><b>Quote too tight</b> and you trade constantly &mdash; but your fills will not
+be balanced. A run of buyers leaves you short a pile of Charizard you never wanted,
+and now you are exposed to the price moving against you. That exposure is
+<b>inventory risk</b>, and it can dwarf everything you earned in spread.</li>
+</ul>
+<p>Avellaneda and Stoikov posed this as a stochastic optimal control problem &mdash;
+maximise the expected utility of your wealth at the end of the session, given that
+the price diffuses randomly and your fill probability declines as you quote further
+out &mdash; and solved the resulting equation. Two results come out, and both are
+interpretable.</p>
+
+<h4>Result 1: quote around your reservation price, not the market&rsquo;s mid</h4>
+<div class="eq">r &nbsp;=&nbsp; s &nbsp;&minus;&nbsp; <span class="term">q &middot; &gamma; &middot; &sigma;<sup>2</sup> &middot; (T &minus; t)</span><span class="where"><b>r</b> your reservation price &middot; <b>s</b> the market mid &middot; <b>q</b> your inventory (positive = long) &middot; <b>&gamma;</b> your risk aversion &middot; <b>&sigma;<sup>2</sup></b> the variance rate &middot; <b>(T&minus;t)</b> time remaining in the session</span></div>
+<p>The <span class="term">underlined term</span> is the whole idea, and every factor
+in it earns its place:</p>
+<table>
+<tr><th style="width:20mm">Factor</th><th>Read it as</th></tr>
+<tr><td class="mono"><b>q</b></td><td>How much I am already holding. Zero inventory,
+    zero adjustment &mdash; and the sign flips when you go short, so the correction
+    always pushes <em>against</em> your position.</td></tr>
+<tr><td class="mono"><b>&gamma;</b></td><td>How much I mind risk. A &gamma; of zero
+    means you do not care about inventory at all and quote symmetrically around the
+    mid forever.</td></tr>
+<tr><td class="mono"><b>&sigma;<sup>2</sup></b></td><td>How dangerous holding is
+    <em>right now</em>. In a calm market inventory is nearly free; in a violent one
+    it is terrifying. This is where Fact 2 gets monetised.</td></tr>
+<tr><td class="mono"><b>(T&minus;t)</b></td><td>How long I am stuck with it. Risk is
+    proportional to remaining exposure time, so the adjustment shrinks to zero as
+    the session closes &mdash; the model naturally becomes indifferent at the end,
+    because there is no longer time to be hurt.</td></tr>
+</table>
+<p>So: <b>if you are long, your reservation price is below the market mid.</b> You
+are willing to sell a little cheaper than you &ldquo;should&rdquo;, and you demand a
+little more discount to buy more. You have not become bearish; you have priced in the
+cost of the risk you are already carrying.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 10 — Avellaneda–Stoikov: how inventory bends your quotes</figcaption><svg viewBox="0 0 760 276" width="100%" role="img" aria-label="Figure 10 — Avellaneda–Stoikov: how inventory bends your quotes"><rect width="760" height="276" fill="#fcfcfb"/><line x1="60.0" y1="152.0" x2="700.0" y2="152.0" stroke="#0b0b0b" stroke-width="1.5" stroke-dasharray="6 3" stroke-linecap="butt"/><text x="752.0" y="145.0" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="600" style="">market mid  s = 100</text><text x="140.0" y="42.0" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">SHORT  q = − 10</text><text x="140.0" y="58.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">wants to BUY back</text><line x1="140.0" y1="76.0" x2="140.0" y2="214.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><line x1="84.0" y1="116.0" x2="196.0" y2="116.0" stroke="#4a3aa7" stroke-width="2" stroke-linecap="butt"/><rect x="109" y="108.0" width="62" height="16" rx="3" fill="#fcfcfb"/><text x="140.0" y="120.0" font-size="10.5" fill="#4a3aa7" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">r = 101.2</text><path d="M98.0,93.0 H179.0 A3.0,3.0 0 0 1 182.0,96.0 V100.0 A3.0,3.0 0 0 1 179.0,103.0 H98.0 Z" fill="#e34948"/><text x="92.0" y="102.0" font-size="10" fill="#e34948" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">ask</text><path d="M98.0,129.0 H179.0 A3.0,3.0 0 0 1 182.0,132.0 V136.0 A3.0,3.0 0 0 1 179.0,139.0 H98.0 Z" fill="#2a78d6"/><text x="92.0" y="138.0" font-size="10" fill="#2a78d6" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">bid</text><line x1="196.0" y1="98.0" x2="196.0" y2="134.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="193.0" y1="98.0" x2="199.0" y2="98.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="193.0" y1="134.0" x2="199.0" y2="134.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><text x="203.0" y="120.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">δ</text><line x1="62.0" y1="152.0" x2="62.0" y2="116.0" stroke="#4a3aa7" stroke-width="1.5" stroke-linecap="butt"/><path d="M58,121.99999999999991 L62,115.99999999999991 L66,121.99999999999991" fill="none" stroke="#4a3aa7" stroke-width="1.5"/><text x="340.0" y="42.0" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">FLAT   q = 0</text><text x="340.0" y="58.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">no preference</text><line x1="340.0" y1="76.0" x2="340.0" y2="214.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><line x1="284.0" y1="152.0" x2="396.0" y2="152.0" stroke="#4a3aa7" stroke-width="2" stroke-linecap="butt"/><rect x="309" y="144.0" width="62" height="16" rx="3" fill="#fcfcfb"/><text x="340.0" y="156.0" font-size="10.5" fill="#4a3aa7" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">r = 100.0</text><path d="M298.0,129.0 H379.0 A3.0,3.0 0 0 1 382.0,132.0 V136.0 A3.0,3.0 0 0 1 379.0,139.0 H298.0 Z" fill="#e34948"/><text x="292.0" y="138.0" font-size="10" fill="#e34948" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">ask</text><path d="M298.0,165.0 H379.0 A3.0,3.0 0 0 1 382.0,168.0 V172.0 A3.0,3.0 0 0 1 379.0,175.0 H298.0 Z" fill="#2a78d6"/><text x="292.0" y="174.0" font-size="10" fill="#2a78d6" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">bid</text><line x1="396.0" y1="134.0" x2="396.0" y2="170.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="393.0" y1="134.0" x2="399.0" y2="134.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="393.0" y1="170.0" x2="399.0" y2="170.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><text x="403.0" y="156.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">δ</text><text x="540.0" y="42.0" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">LONG   q = + 10</text><text x="540.0" y="58.0" font-size="10" fill="#898781" text-anchor="middle" font-weight="400" style="">wants to SELL down</text><line x1="540.0" y1="76.0" x2="540.0" y2="214.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><line x1="484.0" y1="188.0" x2="596.0" y2="188.0" stroke="#4a3aa7" stroke-width="2" stroke-linecap="butt"/><rect x="509" y="180.0" width="62" height="16" rx="3" fill="#fcfcfb"/><text x="540.0" y="192.0" font-size="10.5" fill="#4a3aa7" text-anchor="middle" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">r = 98.8</text><path d="M498.0,165.0 H579.0 A3.0,3.0 0 0 1 582.0,168.0 V172.0 A3.0,3.0 0 0 1 579.0,175.0 H498.0 Z" fill="#e34948"/><text x="492.0" y="174.0" font-size="10" fill="#e34948" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">ask</text><path d="M498.0,201.0 H579.0 A3.0,3.0 0 0 1 582.0,204.0 V208.0 A3.0,3.0 0 0 1 579.0,211.0 H498.0 Z" fill="#2a78d6"/><text x="492.0" y="210.0" font-size="10" fill="#2a78d6" text-anchor="end" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">bid</text><line x1="596.0" y1="170.0" x2="596.0" y2="206.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="593.0" y1="170.0" x2="599.0" y2="170.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><line x1="593.0" y1="206.0" x2="599.0" y2="206.0" stroke="#52514e" stroke-width="1" stroke-linecap="butt"/><text x="603.0" y="192.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">δ</text><line x1="462.0" y1="152.0" x2="462.0" y2="188.0" stroke="#4a3aa7" stroke-width="1.5" stroke-linecap="butt"/><path d="M458,182.00000000000009 L462,188.00000000000009 L466,182.00000000000009" fill="none" stroke="#4a3aa7" stroke-width="1.5"/><rect x="60" y="226" width="640" height="38" rx="6" fill="#f0efec"/><text x="74.0" y="242.0" font-size="11" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Holding inventory is risky, so the maker shifts BOTH quotes away from it.</text><text x="74.0" y="257.0" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="400" style="">The purple arrow is the inventory skew. Long → cheaper offers, stingier bids, so the position works itself off.</text></svg><p class="fig-cap">The reservation price r is the price at which the maker is genuinely indifferent — it is not the market mid, it is the mid adjusted for the risk they are already carrying. Quotes sit symmetrically around r, so the skew is what makes the position self-liquidating.</p><p class="fig-note">Skew and spread magnitudes chosen for legibility, not calibrated.</p></figure>
+<h4>Result 2: how wide to make the spread</h4>
+<div class="eq">&delta; &nbsp;=&nbsp; <span class="term">&gamma; &sigma;<sup>2</sup> (T &minus; t)</span> &nbsp;+&nbsp; <span class="term"><span class="frac"><span class="n">2</span><span class="d">&gamma;</span></span> ln <span style="font-size:1.2em">(</span>1 + <span class="frac"><span class="n">&gamma;</span><span class="d">k</span></span><span style="font-size:1.2em">)</span></span><span class="where">then quote &nbsp;bid = r &minus; &delta;/2&nbsp; and &nbsp;ask = r + &delta;/2. <b>k</b> measures how sharply your fill rate falls off as you quote further from the mid.</span></div>
+<p>Two terms, doing two different jobs:</p>
+<ul>
+<li><b>&gamma;&sigma;<sup>2</sup>(T&minus;t)</b> &mdash; the <b>risk premium</b>.
+Identical in form to the inventory skew, and for the same reason: this is what you
+charge for the danger of holding whatever you are about to be handed. Volatility
+rises, your spread widens. This is why real spreads blow out during a crash, and it
+is not panic &mdash; it is arithmetic.</li>
+<li><b>(2/&gamma;)&middot;ln(1 + &gamma;/k)</b> &mdash; the <b>market-power term</b>.
+It contains no inventory and no time; it depends only on how price-sensitive your
+counterparties are. It comes from modelling the fill intensity as
+&lambda;(&delta;) = A&middot;e<sup>&minus;k&delta;</sup>: quote one unit further out
+and your fill rate drops by a constant factor. A large k means customers are picky
+and abandon you quickly, so you must quote tight. A small k means they will trade
+with you almost regardless, so you can charge more. This term is the monopolist&rsquo;s
+markup.</li>
+</ul>
+<div class="flag"><span class="lab">Be precise about this in interviews</span>
+<p>These are the closed-form <em>asymptotic approximations</em> from the 2008 paper,
+not exact solutions &mdash; the exact problem is a Hamilton&ndash;Jacobi&ndash;Bellman
+PDE, and these expressions come from an expansion of it. Saying &ldquo;this is the
+approximate solution to the HJB equation under exponential fill intensity&rdquo;
+signals that you read the paper. Saying &ldquo;this is the optimal spread&rdquo;
+signals that you read a blog post about it.</p></div>
+
+<h3>5.9 &nbsp;Adverse selection: why market making is hard</h3>
+<p>There is a nasty asymmetry hiding in 5.8 that the model handles only indirectly,
+and it is the single most important concept for understanding why liquidity provision
+is not free money.</p>
+<p>Your bid rests at 99. Who hits it? Disproportionately, <b>somebody who knows
+something you do not.</b> If a Water-type buff is about to be announced, the traders
+who see it first come and take your offers before you can pull them. Your fills are
+not a random sample of the market &mdash; they are <em>selected</em>, and selected
+against you. Formally, the thing that ruins your day is:</p>
+<div class="eq">E[ &Delta;s <span style="font-size:1.2em">|</span> my bid was filled ] &nbsp;&lt;&nbsp; 0<span class="where">In words: conditional on somebody having sold to me, the price is expected to fall. I bought, and then it went down. Every time.</span></div>
+<p>So a market maker&rsquo;s profit decomposes into two competing pieces:</p>
+<div class="eq" style="font-size:11.6pt">P&amp;L &nbsp;=&nbsp; <span style="color:#006300">spread captured</span> &nbsp;&minus;&nbsp; <span style="color:#b3302f">adverse selection</span> &nbsp;&minus;&nbsp; <span style="color:#b3302f">inventory risk</span></div>
+<p>The first term is small, frequent and reliable. The second is occasional, large
+and brutal. Market making is the business of collecting the first faster than the
+second takes it away, and every real market maker&rsquo;s technology budget goes on
+reducing the second &mdash; which is what all the latency work is ultimately
+<em>for</em>. Being fast is not about greed; it is about being able to withdraw your
+quotes before the informed trader reaches them.</p>
+<div class="key"><span class="lab">The experiment this makes possible</span>
+<p>This is why the spec has scheduled &ldquo;meta patches&rdquo; &mdash; announced
+shocks like <em>Water types buffed 15%</em>. If we give agents different reaction
+latencies, then at each patch the fast agents will systematically profit at the
+expense of the slow market maker. And because we control everything, <b>we can
+measure exactly how much</b>, in currency, attributable to latency alone. That
+number is the most quantitatively interesting result the whole project can produce,
+and it is a direct, honest answer to &ldquo;why does anybody care about
+nanoseconds?&rdquo;</p></div>
+
+<h3>5.10 &nbsp;Cointegration: trading a relationship instead of a price</h3>
+<p>Charmander, Charmeleon and Charizard are the same creature at three stages. Their
+prices should be tethered: a Charizard is worth roughly what a Charmander is worth
+plus the cost of evolving it. Individually each price wanders unpredictably (5.6,
+Fact 2). But their <em>difference</em> should not wander &mdash; it should hover
+around a constant and get pulled back whenever it strays.</p>
+<p>Two series with that property are <b>cointegrated</b>. In the standard vocabulary,
+each price alone is <b>I(1)</b> &mdash; a random walk, non-stationary, no fixed mean
+to return to &mdash; but some linear combination of them is <b>I(0)</b>:
+stationary, mean-reverting, forecastable.</p>
+<div class="eq">spread<sub>t</sub> &nbsp;=&nbsp; P<sup>B</sup><sub>t</sub> &minus; &beta; &middot; P<sup>A</sup><sub>t</sub><br>z<sub>t</sub> &nbsp;=&nbsp; <span class="frac"><span class="n">spread<sub>t</sub> &minus; &mu;<sub>spread</sub></span><span class="d">&sigma;<sub>spread</sub></span></span><span class="where"><b>&beta;</b> the hedge ratio &mdash; how many Charmander one Charizard is worth, estimated by regressing one price on the other &middot; <b>z</b> the spread restated in standard deviations</span></div>
+<p>The strategy is then almost embarrassingly simple: when z climbs above +2, B is
+expensive relative to A, so sell B and buy &beta; of A. When z falls below &minus;2,
+do the reverse. Close out when z returns to 0.</p>
+<figure class="fig "><figcaption class="fig-title">Figure 11 — Cointegration: the evolution line has to hang together</figcaption><svg viewBox="0 0 690 380" width="100%" role="img" aria-label="Figure 11 — Cointegration: the evolution line has to hang together"><rect width="690" height="380" fill="#fcfcfb"/><line x1="62.0" y1="178.0" x2="664.0" y2="178.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="54.0" y="182.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">87</text><line x1="62.0" y1="112.0" x2="664.0" y2="112.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="54.0" y="116.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">113</text><line x1="62.0" y1="46.0" x2="664.0" y2="46.0" stroke="#e1e0d9" stroke-width="1" stroke-linecap="butt"/><text x="54.0" y="50.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">139</text><polyline points="62.0,145.5 63.0,143.8 64.0,135.6 65.0,138.2 66.0,142.2 67.0,139.9 68.0,136.9 69.0,141.6 70.0,134.1 71.0,144.9 72.1,138.3 73.1,136.2 74.1,135.1 75.1,135.5 76.1,135.4 77.1,133.7 78.1,130.6 79.1,135.0 80.1,136.0 81.1,128.8 82.1,135.8 83.1,140.9 84.1,141.0 85.1,142.7 86.1,152.9 87.1,152.1 88.1,158.3 89.1,162.2 90.1,169.0 91.1,166.7 92.2,166.7 93.2,165.6 94.2,169.2 95.2,166.4 96.2,163.2 97.2,166.0 98.2,162.5 99.2,158.8 100.2,158.4 101.2,162.9 102.2,162.2 103.2,160.1 104.2,154.6 105.2,157.5 106.2,164.6 107.2,167.2 108.2,173.1 109.2,178.0 110.2,175.1 111.2,177.6 112.3,169.7 113.3,162.2 114.3,162.5 115.3,159.5 116.3,157.4 117.3,166.8 118.3,163.8 119.3,156.0 120.3,165.2 121.3,165.9 122.3,163.3 123.3,163.9 124.3,161.7 125.3,161.3 126.3,163.2 127.3,167.6 128.3,162.0 129.3,165.4 130.3,160.2 131.3,165.7 132.4,157.8 133.4,156.2 134.4,157.8 135.4,155.7 136.4,148.3 137.4,143.6 138.4,148.1 139.4,144.3 140.4,140.6 141.4,144.0 142.4,144.0 143.4,141.4 144.4,148.3 145.4,141.9 146.4,135.7 147.4,145.7 148.4,148.1 149.4,152.6 150.4,152.6 151.4,145.2 152.5,133.3 153.5,143.0 154.5,146.0 155.5,142.5 156.5,136.1 157.5,132.8 158.5,136.1 159.5,136.7 160.5,136.1 161.5,133.4 162.5,139.8 163.5,139.0 164.5,134.2 165.5,137.7 166.5,140.4 167.5,143.4 168.5,148.0 169.5,142.0 170.5,141.6 171.5,148.7 172.6,143.7 173.6,141.0 174.6,131.7 175.6,128.7 176.6,133.7 177.6,139.9 178.6,130.0 179.6,122.5 180.6,123.0 181.6,126.2 182.6,125.8 183.6,131.4 184.6,129.7 185.6,131.0 186.6,129.7 187.6,126.1 188.6,124.3 189.6,119.9 190.6,125.5 191.6,120.3 192.7,131.7 193.7,139.4 194.7,135.4 195.7,134.7 196.7,133.5 197.7,135.3 198.7,126.5 199.7,123.2 200.7,118.7 201.7,119.8 202.7,124.3 203.7,124.0 204.7,129.0 205.7,133.2 206.7,136.0 207.7,136.6 208.7,133.2 209.7,135.3 210.7,145.5 211.7,146.2 212.8,144.5 213.8,137.4 214.8,136.1 215.8,138.8 216.8,142.9 217.8,133.8 218.8,129.7 219.8,124.7 220.8,109.9 221.8,117.2 222.8,115.2 223.8,110.2 224.8,109.4 225.8,107.3 226.8,107.3 227.8,108.1 228.8,112.1 229.8,111.3 230.8,117.8 231.8,113.8 232.9,119.7 233.9,116.3 234.9,110.8 235.9,110.2 236.9,107.7 237.9,109.5 238.9,111.9 239.9,113.9 240.9,115.1 241.9,113.2 242.9,113.7 243.9,108.4 244.9,115.9 245.9,113.9 246.9,110.5 247.9,118.8 248.9,120.4 249.9,119.1 250.9,117.9 251.9,124.0 253.0,129.3 254.0,132.3 255.0,123.2 256.0,125.2 257.0,131.2 258.0,129.9 259.0,135.0 260.0,131.0 261.0,136.3 262.0,135.6 263.0,127.8 264.0,134.8 265.0,134.8 266.0,132.0 267.0,128.7 268.0,131.7 269.0,123.9 270.0,125.6 271.0,124.1 272.0,123.7 273.1,120.3 274.1,123.1 275.1,119.4 276.1,122.3 277.1,129.1 278.1,124.9 279.1,118.6 280.1,112.3 281.1,117.8 282.1,117.5 283.1,116.1 284.1,112.6 285.1,114.8 286.1,126.1 287.1,123.6 288.1,128.8 289.1,132.0 290.1,140.1 291.1,145.9 292.1,150.0 293.2,147.6 294.2,140.9 295.2,139.0 296.2,132.9 297.2,134.6 298.2,143.3 299.2,142.7 300.2,137.5 301.2,143.0 302.2,140.4 303.2,136.4 304.2,143.2 305.2,149.5 306.2,149.3 307.2,149.2 308.2,152.9 309.2,148.4 310.2,141.1 311.2,145.0 312.2,138.3 313.3,136.2 314.3,135.3 315.3,128.2 316.3,132.3 317.3,127.9 318.3,117.3 319.3,115.2 320.3,114.9 321.3,116.1 322.3,107.8 323.3,105.7 324.3,106.8 325.3,100.7 326.3,107.4 327.3,105.3 328.3,105.6 329.3,109.1 330.3,106.4 331.3,103.1 332.3,109.2 333.4,106.0 334.4,108.7 335.4,113.5 336.4,120.9 337.4,118.3 338.4,115.5 339.4,114.2 340.4,114.2 341.4,112.2 342.4,112.3 343.4,110.8 344.4,107.8 345.4,108.4 346.4,103.8 347.4,110.7 348.4,113.5 349.4,105.3 350.4,101.6 351.4,104.1 352.4,103.0 353.5,103.4 354.5,105.8 355.5,110.5 356.5,106.7 357.5,113.5 358.5,105.3 359.5,106.2 360.5,118.6 361.5,113.7 362.5,116.8 363.5,117.2 364.5,123.1 365.5,118.1 366.5,105.5 367.5,112.1 368.5,109.7 369.5,113.3 370.5,109.7 371.5,118.7 372.5,123.1 373.6,121.0 374.6,123.4 375.6,112.4 376.6,119.1 377.6,115.4 378.6,106.2 379.6,106.6 380.6,112.5 381.6,111.3 382.6,112.6 383.6,111.2 384.6,109.0 385.6,110.5 386.6,108.7 387.6,100.2 388.6,95.5 389.6,106.0 390.6,105.6 391.6,110.2 392.6,107.7 393.7,105.9 394.7,97.1 395.7,93.3 396.7,91.9 397.7,89.5 398.7,90.1 399.7,90.4 400.7,81.1 401.7,79.9 402.7,82.4 403.7,73.8 404.7,73.9 405.7,74.1 406.7,77.1 407.7,80.4 408.7,86.3 409.7,97.4 410.7,90.7 411.7,90.9 412.7,90.6 413.8,85.4 414.8,81.9 415.8,80.4 416.8,92.1 417.8,94.8 418.8,90.7 419.8,84.1 420.8,77.0 421.8,68.3 422.8,74.8 423.8,86.5 424.8,80.9 425.8,83.1 426.8,77.5 427.8,81.3 428.8,78.0 429.8,86.1 430.8,84.2 431.8,87.6 432.8,79.8 433.9,81.3 434.9,81.2 435.9,78.5 436.9,80.4 437.9,76.0 438.9,76.7 439.9,76.7 440.9,80.3 441.9,71.1 442.9,72.0 443.9,70.0 444.9,69.0 445.9,70.2 446.9,70.9 447.9,70.8 448.9,69.7 449.9,70.7 450.9,77.3 451.9,76.8 452.9,76.8 454.0,70.1 455.0,79.2 456.0,78.0 457.0,82.0 458.0,79.6 459.0,80.2 460.0,78.7 461.0,71.9 462.0,66.8 463.0,68.7 464.0,66.4 465.0,71.5 466.0,68.1 467.0,67.7 468.0,71.2 469.0,72.5 470.0,72.7 471.0,69.8 472.0,73.0 473.0,77.5 474.1,62.4 475.1,60.3 476.1,56.0 477.1,55.8 478.1,55.6 479.1,53.5 480.1,61.1 481.1,53.1 482.1,50.7 483.1,58.5 484.1,57.7 485.1,65.4 486.1,60.8 487.1,71.4 488.1,77.6 489.1,74.5 490.1,73.1 491.1,82.8 492.1,77.8 493.1,70.5 494.2,78.1 495.2,66.1 496.2,68.9 497.2,71.1 498.2,74.9 499.2,82.5 500.2,76.7 501.2,73.1 502.2,75.2 503.2,76.5 504.2,86.3 505.2,85.3 506.2,81.4 507.2,89.0 508.2,91.1 509.2,90.7 510.2,84.8 511.2,79.5 512.2,81.4 513.2,86.1 514.3,82.4 515.3,84.9 516.3,89.3 517.3,80.5 518.3,74.1 519.3,71.1 520.3,73.6 521.3,70.9 522.3,78.9 523.3,79.3 524.3,84.7 525.3,76.1 526.3,67.3 527.3,71.9 528.3,70.9 529.3,80.6 530.3,77.9 531.3,70.3 532.3,73.2 533.3,69.4 534.4,67.7 535.4,70.6 536.4,72.4 537.4,64.5 538.4,64.4 539.4,64.9 540.4,60.1 541.4,65.2 542.4,68.1 543.4,63.4 544.4,66.8 545.4,62.6 546.4,62.3 547.4,73.0 548.4,74.7 549.4,79.9 550.4,77.7 551.4,83.5 552.4,80.6 553.4,81.8 554.5,80.5 555.5,83.3 556.5,85.0 557.5,76.4 558.5,77.0 559.5,78.4 560.5,86.3 561.5,81.8 562.5,77.4 563.5,78.0 564.5,77.9 565.5,82.2 566.5,85.0 567.5,89.7 568.5,90.1 569.5,87.9 570.5,91.6 571.5,87.0 572.5,85.6 573.5,83.3 574.6,77.3 575.6,79.6 576.6,81.6 577.6,79.0 578.6,78.0 579.6,73.9 580.6,79.0 581.6,74.1 582.6,79.4 583.6,75.9 584.6,83.8 585.6,81.0 586.6,75.4 587.6,72.7 588.6,67.9 589.6,73.9 590.6,76.2 591.6,79.8 592.6,88.8 593.6,79.4 594.7,77.7 595.7,76.4 596.7,75.1 597.7,76.6 598.7,82.3 599.7,86.3 600.7,84.7 601.7,86.8 602.7,80.8 603.7,76.3 604.7,84.1 605.7,84.9 606.7,84.5 607.7,91.9 608.7,93.8 609.7,89.4 610.7,83.8 611.7,80.0 612.7,78.3 613.7,83.0 614.8,75.7 615.8,79.5 616.8,76.1 617.8,68.7 618.8,71.1 619.8,74.0 620.8,73.8 621.8,68.8 622.8,70.7 623.8,67.0 624.8,68.2 625.8,73.7 626.8,76.6 627.8,77.4 628.8,80.0 629.8,85.2 630.8,93.5 631.8,95.9 632.8,97.1 633.8,104.1 634.9,100.4 635.9,93.7 636.9,91.1 637.9,88.8 638.9,83.6 639.9,92.0 640.9,89.4 641.9,95.9 642.9,92.6 643.9,97.2 644.9,91.1 645.9,87.8 646.9,96.3 647.9,96.0 648.9,90.5 649.9,96.2 650.9,88.3 651.9,94.5 652.9,94.0 653.9,101.8 655.0,100.4 656.0,108.8 657.0,120.0 658.0,117.2 659.0,110.3 660.0,109.1 661.0,108.8 662.0,106.3 663.0,108.5 664.0,105.3" fill="none" stroke="#2a78d6" stroke-width="1.8"/><polyline points="62.0,145.5 63.0,139.5 64.0,132.7 65.0,136.1 66.0,132.9 67.0,139.0 68.0,136.7 69.0,136.8 70.0,134.1 71.0,144.3 72.1,134.4 73.1,134.1 74.1,133.3 75.1,132.0 76.1,135.3 77.1,131.7 78.1,127.4 79.1,128.2 80.1,128.9 81.1,127.3 82.1,129.2 83.1,137.8 84.1,134.9 85.1,137.5 86.1,147.5 87.1,152.5 88.1,152.2 89.1,159.8 90.1,166.3 91.1,166.4 92.2,159.8 93.2,162.2 94.2,168.3 95.2,162.6 96.2,157.7 97.2,159.4 98.2,160.0 99.2,154.4 100.2,154.8 101.2,158.0 102.2,157.5 103.2,157.8 104.2,150.5 105.2,156.5 106.2,162.0 107.2,164.5 108.2,171.6 109.2,171.4 110.2,168.3 111.2,171.3 112.3,165.3 113.3,162.5 114.3,161.2 115.3,156.8 116.3,151.5 117.3,156.8 118.3,156.6 119.3,153.9 120.3,160.0 121.3,158.4 122.3,161.0 123.3,156.9 124.3,160.8 125.3,159.2 126.3,159.5 127.3,162.6 128.3,159.8 129.3,160.7 130.3,160.6 131.3,161.3 132.4,154.9 133.4,152.7 134.4,153.9 135.4,150.0 136.4,143.9 137.4,135.6 138.4,144.9 139.4,139.8 140.4,138.1 141.4,139.3 142.4,144.6 143.4,137.1 144.4,143.9 145.4,137.4 146.4,134.4 147.4,141.8 148.4,143.4 149.4,146.4 150.4,148.9 151.4,141.1 152.5,132.7 153.5,139.9 154.5,142.4 155.5,137.7 156.5,133.8 157.5,130.1 158.5,131.4 159.5,132.8 160.5,132.4 161.5,134.3 162.5,139.8 163.5,134.8 164.5,131.8 165.5,134.3 166.5,137.1 167.5,140.2 168.5,142.6 169.5,136.0 170.5,137.0 171.5,145.0 172.6,138.1 173.6,138.5 174.6,125.2 175.6,126.1 176.6,127.1 177.6,133.7 178.6,129.4 179.6,117.6 180.6,122.2 181.6,126.7 182.6,121.5 183.6,124.9 184.6,127.7 185.6,127.0 186.6,126.9 187.6,121.5 188.6,123.0 189.6,120.1 190.6,118.7 191.6,117.4 192.7,128.1 193.7,135.0 194.7,131.2 195.7,133.7 196.7,131.6 197.7,131.1 198.7,121.5 199.7,120.7 200.7,114.6 201.7,115.1 202.7,117.5 203.7,123.3 204.7,121.8 205.7,127.7 206.7,130.0 207.7,129.8 208.7,131.3 209.7,135.9 210.7,140.1 211.7,139.1 212.8,138.3 213.8,135.6 214.8,132.4 215.8,134.8 216.8,140.8 217.8,130.2 218.8,126.8 219.8,115.6 220.8,108.8 221.8,109.6 222.8,109.9 223.8,110.0 224.8,102.4 225.8,104.1 226.8,101.1 227.8,98.9 228.8,108.7 229.8,110.3 230.8,110.8 231.8,111.4 232.9,115.2 233.9,112.2 234.9,107.6 235.9,104.5 236.9,104.7 237.9,103.0 238.9,103.8 239.9,105.0 240.9,107.0 241.9,105.5 242.9,109.2 243.9,102.9 244.9,110.0 245.9,106.6 246.9,111.3 247.9,115.3 248.9,115.6 249.9,116.7 250.9,116.9 251.9,119.0 253.0,123.6 254.0,125.8 255.0,121.1 256.0,120.7 257.0,124.1 258.0,126.2 259.0,132.0 260.0,126.1 261.0,131.2 262.0,129.3 263.0,126.7 264.0,134.2 265.0,133.5 266.0,128.1 267.0,126.1 268.0,123.0 269.0,118.9 270.0,120.9 271.0,117.0 272.0,119.0 273.1,114.9 274.1,120.4 275.1,118.1 276.1,117.2 277.1,122.8 278.1,123.4 279.1,116.5 280.1,110.4 281.1,113.6 282.1,109.4 283.1,110.2 284.1,109.6 285.1,111.6 286.1,119.8 287.1,119.2 288.1,126.0 289.1,130.7 290.1,134.2 291.1,141.4 292.1,143.4 293.2,140.8 294.2,134.1 295.2,133.1 296.2,131.6 297.2,131.2 298.2,140.5 299.2,137.2 300.2,136.7 301.2,143.4 302.2,136.3 303.2,136.6 304.2,138.3 305.2,146.7 306.2,146.7 307.2,147.2 308.2,149.3 309.2,146.4 310.2,135.5 311.2,138.7 312.2,136.0 313.3,130.8 314.3,129.2 315.3,121.3 316.3,125.2 317.3,121.7 318.3,112.5 319.3,110.5 320.3,113.7 321.3,109.1 322.3,103.2 323.3,100.3 324.3,104.0 325.3,99.0 326.3,102.5 327.3,99.9 328.3,99.7 329.3,106.0 330.3,102.5 331.3,97.8 332.3,105.6 333.4,101.1 334.4,105.9 335.4,111.5 336.4,116.6 337.4,113.0 338.4,109.2 339.4,109.2 340.4,112.1 341.4,109.6 342.4,110.5 343.4,103.2 344.4,102.7 345.4,101.3 346.4,98.4 347.4,102.6 348.4,105.5 349.4,96.9 350.4,97.4 351.4,98.1 352.4,99.0 353.5,100.2 354.5,97.9 355.5,101.3 356.5,98.0 357.5,103.8 358.5,99.5 359.5,101.6 360.5,108.6 361.5,108.5 362.5,110.9 363.5,108.7 364.5,113.8 365.5,111.7 366.5,94.5 367.5,101.1 368.5,99.2 369.5,98.3 370.5,99.6 371.5,106.5 372.5,112.5 373.6,110.9 374.6,110.9 375.6,103.8 376.6,105.7 377.6,105.5 378.6,91.9 379.6,93.1 380.6,98.8 381.6,97.2 382.6,98.4 383.6,93.7 384.6,94.9 385.6,97.2 386.6,92.9 387.6,83.2 388.6,77.1 389.6,90.6 390.6,90.3 391.6,96.8 392.6,93.5 393.7,92.6 394.7,83.2 395.7,80.6 396.7,76.2 397.7,75.5 398.7,75.4 399.7,75.2 400.7,69.6 401.7,65.4 402.7,69.1 403.7,62.4 404.7,61.1 405.7,61.9 406.7,63.9 407.7,67.4 408.7,69.8 409.7,83.7 410.7,78.8 411.7,74.7 412.7,75.9 413.8,72.3 414.8,69.3 415.8,67.9 416.8,79.2 417.8,78.5 418.8,78.8 419.8,70.5 420.8,62.3 421.8,56.8 422.8,63.4 423.8,71.1 424.8,69.2 425.8,69.5 426.8,65.3 427.8,66.0 428.8,66.4 429.8,71.8 430.8,72.7 431.8,72.5 432.8,73.0 433.9,69.7 434.9,69.0 435.9,69.0 436.9,69.6 437.9,65.0 438.9,64.0 439.9,66.8 440.9,69.7 441.9,59.5 442.9,61.3 443.9,57.3 444.9,57.9 445.9,58.3 446.9,64.4 447.9,61.8 448.9,63.0 449.9,56.5 450.9,67.2 451.9,66.4 452.9,67.6 454.0,63.9 455.0,72.9 456.0,69.0 457.0,72.1 458.0,74.0 459.0,75.0 460.0,74.4 461.0,67.4 462.0,65.6 463.0,60.6 464.0,61.4 465.0,65.3 466.0,63.0 467.0,62.6 468.0,66.3 469.0,68.5 470.0,66.5 471.0,66.4 472.0,65.5 473.0,67.0 474.1,58.7 475.1,56.9 476.1,50.3 477.1,46.3 478.1,47.6 479.1,48.9 480.1,50.3 481.1,47.0 482.1,46.0 483.1,52.4 484.1,53.8 485.1,58.1 486.1,62.0 487.1,66.0 488.1,68.7 489.1,69.5 490.1,71.2 491.1,77.4 492.1,73.1 493.1,65.5 494.2,70.5 495.2,63.4 496.2,66.5 497.2,68.6 498.2,67.9 499.2,77.4 500.2,70.5 501.2,66.9 502.2,72.8 503.2,74.5 504.2,78.6 505.2,80.9 506.2,76.9 507.2,84.3 508.2,87.7 509.2,82.0 510.2,82.3 511.2,75.4 512.2,78.8 513.2,80.9 514.3,76.3 515.3,79.9 516.3,80.6 517.3,77.1 518.3,66.4 519.3,67.3 520.3,70.0 521.3,64.8 522.3,74.9 523.3,73.7 524.3,79.1 525.3,68.1 526.3,65.0 527.3,65.7 528.3,67.4 529.3,75.6 530.3,73.8 531.3,65.8 532.3,70.1 533.3,69.0 534.4,64.8 535.4,68.4 536.4,66.9 537.4,60.3 538.4,60.6 539.4,59.7 540.4,55.9 541.4,62.7 542.4,62.1 543.4,58.1 544.4,63.6 545.4,58.4 546.4,59.9 547.4,69.9 548.4,67.9 549.4,74.3 550.4,72.9 551.4,79.3 552.4,72.4 553.4,78.4 554.5,77.5 555.5,79.4 556.5,78.8 557.5,75.7 558.5,71.5 559.5,75.0 560.5,82.6 561.5,75.7 562.5,69.8 563.5,74.7 564.5,74.2 565.5,76.5 566.5,80.1 567.5,84.2 568.5,84.3 569.5,82.3 570.5,85.5 571.5,81.1 572.5,76.2 573.5,78.4 574.6,71.8 575.6,75.3 576.6,74.6 577.6,74.4 578.6,74.3 579.6,69.2 580.6,76.6 581.6,67.8 582.6,73.2 583.6,73.2 584.6,79.6 585.6,77.2 586.6,70.8 587.6,64.8 588.6,58.4 589.6,71.0 590.6,72.6 591.6,75.3 592.6,80.5 593.6,73.9 594.7,74.5 595.7,73.6 596.7,69.7 597.7,78.2 598.7,79.4 599.7,83.1 600.7,82.7 601.7,79.2 602.7,76.8 603.7,72.9 604.7,77.0 605.7,82.8 606.7,79.6 607.7,86.9 608.7,90.3 609.7,84.6 610.7,79.8 611.7,73.4 612.7,76.2 613.7,75.5 614.8,70.9 615.8,70.0 616.8,72.0 617.8,63.1 618.8,68.4 619.8,68.5 620.8,69.2 621.8,65.8 622.8,65.0 623.8,65.9 624.8,62.9 625.8,66.4 626.8,71.7 627.8,72.4 628.8,74.3 629.8,82.5 630.8,88.0 631.8,92.8 632.8,90.5 633.8,94.1 634.9,96.8 635.9,87.5 636.9,87.3 637.9,80.1 638.9,84.6 639.9,86.4 640.9,86.9 641.9,94.1 642.9,88.2 643.9,93.7 644.9,87.0 645.9,86.1 646.9,93.9 647.9,91.7 648.9,83.1 649.9,87.3 650.9,83.5 651.9,93.0 652.9,87.9 653.9,96.1 655.0,94.2 656.0,104.3 657.0,115.9 658.0,111.5 659.0,102.3 660.0,107.0 661.0,102.1 662.0,101.5 663.0,103.4 664.0,101.6" fill="none" stroke="#eb6834" stroke-width="1.8"/><rect x="62.0" y="20.0" width="9" height="9" rx="2" fill="#2a78d6"/><text x="76.0" y="28.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Charmander</text><rect x="162.0" y="20.0" width="9" height="9" rx="2" fill="#eb6834"/><text x="176.0" y="28.0" font-size="11" fill="#52514e" text-anchor="start" font-weight="400" style="">Charizard</text><text x="54.0" y="30.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" style="">indexed</text><text x="62.0" y="40.0" font-size="9.5" fill="#898781" text-anchor="start" font-weight="400" style="">Both indexed to 100 at the start, so one shared scale.</text><rect x="62" y="256.0" width="602" height="60.0" fill="#f0efec"/><line x1="62.0" y1="256.0" x2="664.0" y2="256.0" stroke="#e1e0d9" stroke-width="1" stroke-dasharray="4 3" stroke-linecap="butt"/><text x="54.0" y="260.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">+2σ</text><line x1="62.0" y1="286.0" x2="664.0" y2="286.0" stroke="#c3c2b7" stroke-width="1" stroke-linecap="butt"/><text x="54.0" y="290.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">0</text><line x1="62.0" y1="316.0" x2="664.0" y2="316.0" stroke="#e1e0d9" stroke-width="1" stroke-dasharray="4 3" stroke-linecap="butt"/><text x="54.0" y="320.0" font-size="9.5" fill="#898781" text-anchor="end" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" style="">-2σ</text><rect x="369.5" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="376.6" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="378.6" y="232" width="16.1" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="396.7" y="232" width="3.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="401.7" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="408.7" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="411.7" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="417.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="419.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="423.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="425.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="427.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="429.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="431.8" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="449.9" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="486.1" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><rect x="597.7" y="232" width="1.0" height="108" fill="#e34948" fill-opacity="0.10"/><polyline points="62.0,307.3 63.0,289.2 64.0,295.9 65.0,299.1 66.0,268.5 67.0,303.7 68.0,307.2 69.0,287.8 70.0,308.1 71.0,304.6 72.1,291.3 73.1,299.1 74.1,300.6 75.1,293.1 76.1,307.4 77.1,299.6 78.1,294.9 79.1,279.3 80.1,278.5 81.1,302.1 82.1,280.2 83.1,294.4 84.1,282.2 85.1,286.0 86.1,284.4 87.1,308.5 88.1,281.1 89.1,296.3 90.1,294.6 91.1,304.8 92.2,277.3 93.2,291.7 94.2,301.8 95.2,290.5 96.2,282.9 97.2,278.3 98.2,295.6 99.2,288.2 100.2,291.3 101.2,285.5 102.2,286.6 103.2,296.8 104.2,289.3 105.2,302.4 106.2,295.0 107.2,295.0 108.2,299.1 109.2,277.6 110.2,276.9 111.2,279.0 112.3,287.4 113.3,307.5 114.3,300.9 115.3,295.5 116.3,282.0 117.3,264.4 118.3,276.2 119.3,297.8 120.3,284.4 121.3,274.8 122.3,296.4 123.3,277.2 124.3,302.5 125.3,297.3 126.3,290.6 127.3,284.6 128.3,297.2 129.3,286.5 130.3,308.1 131.3,287.8 132.4,294.5 133.4,292.0 134.4,290.4 135.4,282.9 136.4,288.9 137.4,274.2 138.4,293.6 139.4,288.4 140.4,297.3 141.4,287.7 142.4,310.3 143.4,289.6 144.4,288.4 145.4,288.4 146.4,302.4 147.4,291.1 148.4,287.4 149.4,281.0 150.4,291.7 151.4,289.9 152.5,305.3 153.5,294.3 154.5,292.2 155.5,287.4 156.5,298.3 157.5,296.6 158.5,288.0 159.5,291.4 160.5,292.7 161.5,311.5 162.5,307.9 163.5,290.4 164.5,298.0 165.5,293.7 166.5,293.9 167.5,294.0 168.5,284.8 169.5,282.4 170.5,288.3 171.5,291.7 172.6,284.0 173.6,297.2 174.6,281.2 175.6,297.6 176.6,280.5 177.6,281.6 178.6,305.8 179.6,288.3 180.6,305.5 181.6,310.8 182.6,290.8 183.6,281.0 184.6,299.9 185.6,291.6 186.6,296.8 187.6,289.1 188.6,303.0 189.6,309.6 190.6,280.0 191.6,297.0 192.7,292.8 193.7,289.7 194.7,290.5 195.7,304.0 196.7,300.2 197.7,290.3 198.7,287.4 199.7,298.2 200.7,291.7 201.7,289.4 202.7,280.2 203.7,305.4 204.7,278.4 205.7,285.1 206.7,283.0 207.7,279.5 208.7,300.2 209.7,310.5 210.7,284.9 211.7,277.8 212.8,281.7 213.8,300.2 214.8,292.3 215.8,291.0 216.8,298.7 217.8,292.9 218.8,295.9 219.8,270.5 220.8,305.0 221.8,277.4 222.8,287.2 223.8,308.7 224.8,280.4 225.8,296.5 226.8,283.9 227.8,271.6 228.8,295.1 229.8,305.4 230.8,279.5 231.8,299.5 232.9,290.3 233.9,292.1 234.9,296.4 235.9,285.8 236.9,297.0 237.9,282.6 238.9,275.4 239.9,272.0 240.9,275.4 241.9,277.3 242.9,290.4 243.9,286.4 244.9,284.9 245.9,278.8 246.9,312.9 247.9,294.1 248.9,288.8 249.9,299.1 250.9,304.9 251.9,287.9 253.0,284.7 254.0,280.9 255.0,299.9 256.0,289.7 257.0,278.6 258.0,292.5 259.0,295.5 260.0,287.7 261.0,286.7 262.0,281.4 263.0,304.1 264.0,305.3 265.0,302.7 266.0,291.7 267.0,297.8 268.0,271.8 269.0,287.9 270.0,288.8 271.0,279.0 272.0,289.0 273.1,286.2 274.1,297.3 275.1,303.5 276.1,287.2 277.1,282.4 278.1,302.0 279.1,300.4 280.1,301.5 281.1,291.4 282.1,275.0 283.1,284.5 284.1,297.0 285.1,295.9 286.1,282.3 287.1,290.4 288.1,296.6 289.1,303.0 290.1,283.0 291.1,288.2 292.1,279.6 293.2,279.1 294.2,279.5 295.2,282.7 296.2,302.9 297.2,294.1 298.2,295.6 299.2,284.8 300.2,304.7 301.2,309.2 302.2,290.3 303.2,308.5 304.2,287.1 305.2,295.2 306.2,296.4 307.2,298.4 308.2,291.9 309.2,298.4 310.2,283.9 311.2,280.9 312.2,298.2 313.3,285.4 314.3,282.6 315.3,279.8 316.3,278.5 317.3,282.4 318.3,289.1 319.3,289.9 320.3,304.2 321.3,280.2 322.3,290.7 323.3,287.3 324.3,298.0 325.3,302.8 326.3,289.6 327.3,287.0 328.3,285.1 329.3,296.5 330.3,293.3 331.3,288.0 332.3,294.3 333.4,289.4 334.4,297.7 335.4,300.7 336.4,290.9 337.4,286.7 338.4,283.2 339.4,288.6 340.4,300.2 341.4,298.8 342.4,302.0 343.4,277.6 344.4,288.1 345.4,279.9 346.4,287.5 347.4,275.8 348.4,275.8 349.4,275.0 350.4,292.8 351.4,285.0 352.4,293.3 353.5,296.5 354.5,276.8 355.5,271.0 356.5,273.2 357.5,268.7 358.5,285.5 359.5,290.7 360.5,267.3 361.5,287.6 362.5,284.3 363.5,273.4 364.5,270.1 365.5,282.3 366.5,264.0 367.5,263.4 368.5,265.9 369.5,246.6 370.5,267.4 371.5,258.3 372.5,264.4 373.6,266.6 374.6,256.6 375.6,273.2 376.6,252.9 377.6,267.9 378.6,250.2 379.6,253.4 380.6,252.3 381.6,250.4 382.6,250.1 383.6,236.4 384.6,250.7 385.6,253.8 386.6,243.5 387.6,239.2 388.6,233.6 389.6,245.5 390.6,246.0 391.6,253.9 392.6,250.7 393.7,254.3 394.7,252.6 395.7,257.6 396.7,245.3 397.7,252.6 398.7,249.8 399.7,247.1 400.7,263.3 401.7,250.8 402.7,256.0 403.7,264.2 404.7,258.2 405.7,261.0 406.7,256.3 407.7,257.0 408.7,242.3 409.7,253.2 410.7,260.9 411.7,242.9 412.7,249.2 413.8,256.3 414.8,258.8 415.8,259.2 416.8,257.1 417.8,242.7 418.8,261.0 419.8,254.5 420.8,250.5 421.8,264.4 422.8,264.3 423.8,246.7 424.8,262.7 425.8,254.6 426.8,260.8 427.8,247.7 428.8,263.1 429.8,251.3 430.8,263.2 431.8,248.2 432.8,283.2 433.9,262.9 434.9,260.4 435.9,272.1 436.9,266.2 437.9,265.8 438.9,258.7 439.9,270.4 440.9,267.3 441.9,263.8 442.9,267.2 443.9,259.0 444.9,266.0 445.9,262.6 446.9,285.3 447.9,274.6 448.9,284.1 449.9,252.8 450.9,269.2 451.9,267.9 452.9,273.1 454.0,286.3 455.0,285.3 456.0,273.8 457.0,270.0 458.0,288.1 459.0,289.7 460.0,293.8 461.0,293.1 462.0,307.3 463.0,278.6 464.0,291.4 465.0,286.1 466.0,290.8 467.0,291.1 468.0,291.3 469.0,295.3 470.0,286.0 471.0,297.5 472.0,280.6 473.0,267.7 474.1,297.1 475.1,298.6 476.1,289.4 477.1,273.0 478.1,279.7 479.1,294.0 480.1,267.6 481.1,287.8 482.1,293.5 483.1,287.3 484.1,296.4 485.1,281.8 486.1,317.6 487.1,289.6 488.1,274.7 489.1,290.8 490.1,304.1 491.1,288.9 492.1,292.3 493.1,290.9 494.2,279.5 495.2,301.1 496.2,302.1 497.2,301.6 498.2,282.5 499.2,289.9 500.2,285.7 501.2,286.3 502.2,301.7 503.2,303.2 504.2,278.9 505.2,292.6 506.2,292.2 507.2,291.1 508.2,296.4 509.2,274.3 510.2,300.5 511.2,294.5 512.2,300.5 513.2,289.1 514.3,285.6 515.3,290.4 516.3,274.4 517.3,297.1 518.3,279.8 519.3,296.4 520.3,297.0 521.3,286.5 522.3,294.7 523.3,288.0 524.3,287.7 525.3,278.3 526.3,302.5 527.3,286.0 528.3,297.2 529.3,290.3 530.3,294.5 531.3,293.5 532.3,298.8 533.3,310.4 534.4,300.1 535.4,302.6 536.4,289.0 537.4,294.9 538.4,296.9 539.4,290.6 540.4,295.2 541.4,302.0 542.4,287.1 543.4,290.1 544.4,299.1 545.4,294.9 546.4,302.3 547.4,298.8 548.4,283.4 549.4,288.1 550.4,291.9 551.4,293.7 552.4,276.9 553.4,296.9 554.5,299.0 555.5,295.1 556.5,285.2 557.5,308.5 558.5,288.9 559.5,297.6 560.5,295.6 561.5,286.0 562.5,279.9 563.5,297.6 564.5,296.2 565.5,287.4 566.5,290.5 567.5,287.8 568.5,286.8 569.5,287.6 570.5,285.3 571.5,286.2 572.5,272.2 573.5,290.8 574.6,288.8 575.6,293.4 576.6,282.3 577.6,292.4 578.6,296.3 579.6,292.3 580.6,301.6 581.6,285.6 582.6,285.8 583.6,300.2 584.6,293.7 585.6,295.8 586.6,292.6 587.6,278.8 588.6,272.5 589.6,299.4 590.6,296.4 591.6,292.7 592.6,276.1 593.6,288.2 594.7,298.4 595.7,300.2 596.7,289.3 597.7,318.4 598.7,299.3 599.7,297.7 600.7,302.6 601.7,279.6 602.7,295.0 603.7,297.1 604.7,281.4 605.7,302.2 606.7,290.6 607.7,289.6 608.7,296.3 609.7,290.6 610.7,294.7 611.7,284.2 612.7,303.0 613.7,280.0 614.8,292.0 615.8,271.9 616.8,294.3 617.8,289.0 618.8,301.0 619.8,288.8 620.8,292.6 621.8,299.5 622.8,288.0 623.8,307.7 624.8,289.9 625.8,281.3 626.8,291.3 627.8,290.6 628.8,287.9 629.8,300.2 630.8,287.7 631.8,297.5 632.8,282.6 633.8,268.2 634.9,295.4 635.9,284.7 636.9,294.8 637.9,274.3 638.9,315.4 639.9,287.2 640.9,300.5 641.9,303.0 642.9,292.2 643.9,295.6 644.9,293.4 645.9,303.7 646.9,300.5 647.9,292.5 648.9,280.1 649.9,273.3 650.9,291.0 651.9,304.1 652.9,285.0 653.9,286.2 655.0,284.5 656.0,290.9 657.0,291.5 658.0,285.0 659.0,276.0 660.0,300.8 661.0,281.8 662.0,289.7 663.0,288.4 664.0,294.2" fill="none" stroke="#4a3aa7" stroke-width="1.6"/><text x="62.0" y="216.0" font-size="11.5" fill="#0b0b0b" text-anchor="start" font-weight="600" style="">Spread  =  Charizard − 3 × Charmander,  as a z-score</text><text x="396.6" y="223.6" font-size="10" fill="#e34948" text-anchor="start" font-weight="600" style="">arb bot sells Charizard,</text><text x="396.6" y="236.6" font-size="10" fill="#e34948" text-anchor="start" font-weight="600" style="">buys Charmander</text><text x="664.0" y="372.0" font-size="10" fill="#898781" text-anchor="end" font-weight="400" style="">time →</text></svg><p class="fig-cap">Individually each price wanders unpredictably. Their difference does not — it is tethered. When the tether stretches past ±2σ (shaded), the arbitrageur bets it snaps back. That bet is not a prediction about Charizard; it is a prediction about the relationship.</p></figure>
+<p>Notice what the arbitrageur is and is not claiming. It has <b>no opinion
+whatsoever</b> about whether Charizard is going up or down &mdash; it is short one
+and long the other, so a market-wide rally leaves it roughly flat. Its only bet is
+that <em>the relationship holds</em>. That is what &ldquo;statistical
+arbitrage&rdquo; means, and it is why such strategies can have small, steady returns
+that look nothing like those of the underlying instruments.</p>
+<div class="flag"><span class="lab">The honest caveat, which is also the risk</span>
+<p>Cointegration is an <em>assumption being tested</em>, not a guarantee. The correct
+procedure is to run a statistical test &mdash; Engle&ndash;Granger, which is an
+augmented Dickey&ndash;Fuller test on the regression residuals &mdash; and confirm
+the spread really is stationary before trading it. When a relationship that
+&ldquo;always held&rdquo; stops holding, the position that was hedged becomes two
+large naked bets at once, and the losses are famous. Our arb bot should therefore
+have a stop, and watching it get destroyed by a meta patch that breaks a
+relationship is a genuinely instructive thing to build.</p></div>
+
+<h3>5.11 &nbsp;Sharpe ratio: scoring the agents fairly</h3>
+<p>Finally, the leaderboard needs a metric, and total P&amp;L is a bad one &mdash; it
+rewards whoever took the most risk, which over a short sample mostly rewards
+luck. The standard correction is return per unit of risk:</p>
+<div class="eq">S &nbsp;=&nbsp; <span class="frac"><span class="n">r&#772; &minus; r<sub>f</sub></span><span class="d">&sigma;<sub>r</sub></span></span> &nbsp;&times;&nbsp; &radic;<span class="rad">N</span><span class="where"><b>r&#772;</b> mean return per period &middot; <b>r<sub>f</sub></b> the risk-free rate (zero here) &middot; <b>&sigma;<sub>r</sub></b> its standard deviation &middot; <b>N</b> periods per year, to annualise</span></div>
+<p>An agent earning 5% with almost no variance is a better <em>business</em> than one
+earning 20% by nearly dying twice, and Sharpe is what says so. The
+&radic;N is there because mean return scales with time while standard deviation
+scales with &radic;time &mdash; so the ratio itself grows like &radic;N, and you must
+divide out the sampling frequency before comparing anything.</p>
+<div class="aside"><span class="lab">Where Sharpe lies to you</span>
+<p>Sharpe divides by standard deviation, which assumes risk is symmetric and
+adequately described by the second moment. We proved in 5.6 that our returns are
+fat-tailed &mdash; kurtosis 5.81 &mdash; so the fourth moment is exactly
+where the danger lives, and Sharpe cannot see it. A strategy that earns a little every
+day and loses everything once a year posts a magnificent Sharpe right up until it
+does not. We should report maximum drawdown alongside it, and being able to say
+<em>why</em> is worth more than the ratio itself.</p></div>
+
+<h2 class="part"><span class="num">Part 6</span>Making the Pok&eacute;mon layer do
+real work</h2>
+<p class="standfirst">If the theme is only a coat of paint, it is a liability. If it
+drives the price process, it is the best thing about the project. The difference is
+deliberate design.</p>
+
+<p>The risk is obvious: an interviewer at a serious firm sees Pok&eacute;mon on a CV
+and wonders whether they are looking at a toy. The defence is not to hide the theme
+&mdash; it is to make the theme <em>load-bearing</em>, so that every part of it is
+standing in for a real market phenomenon that would be harder to demonstrate
+otherwise.</p>
+
+<table>
+<tr><th style="width:38mm">Themed feature</th><th style="width:52mm">Real mechanism</th>
+    <th>What it lets us measure</th></tr>
+<tr><td><b>Base stats &rarr; fundamental value</b></td>
+    <td>An asset with a knowable fair value</td>
+    <td>Whether prices actually converge to fundamentals, and how fast. You cannot do
+        this with real equities because nobody knows the true value.</td></tr>
+<tr><td><b>Meta patches</b><br><span style="font-size:9pt;color:#898781">&ldquo;Water
+    types buffed 15%&rdquo;</span></td>
+    <td>A scheduled, quantified information shock</td>
+    <td><b>Adverse selection, in currency.</b> Give agents different reaction
+        latencies and measure exactly who profits from whom. This is the headline
+        result of the whole project.</td></tr>
+<tr><td><b>Evolution lines</b></td><td>A cointegrated basket</td>
+    <td>Statistical arbitrage that is genuinely justified rather than curve-fitted
+        &mdash; we <em>know</em> the relationship exists because we built it.</td></tr>
+<tr><td><b>Legendary rarity</b></td><td>A tiny free float</td>
+    <td>Slippage and spread as a function of depth, with everything else held
+        constant. The cleanest possible microstructure experiment.</td></tr>
+<tr><td><b>Type effectiveness</b></td><td>A correlation structure across instruments</td>
+    <td>Whether a portfolio-level hedge behaves as the correlation matrix says it
+        should.</td></tr>
+</table>
+
+<h3>Fundamental value</h3>
+<p>Each species gets a fair value that agents can reason about &mdash; some knowing
+it precisely, some noisily, some not at all. A workable form:</p>
+<div class="eq" style="font-size:11.4pt">V<sub>0</sub> &nbsp;=&nbsp; k &middot; <span style="font-size:1.15em">(</span><span class="frac"><span class="n">BST</span><span class="d">500</span></span><span style="font-size:1.15em">)</span><sup>&alpha;</sup> &middot; R &middot; T<sub>t</sub><span class="where"><b>BST</b> base stat total &mdash; the in-game power number &middot; <b>&alpha;</b> a convexity exponent around 1.5, so strong species are worth disproportionately more &middot; <b>R</b> rarity multiplier (common 1, rare ~4, legendary ~40) &middot; <b>T<sub>t</sub></b> the current meta&rsquo;s demand factor for that type &mdash; <em>the only time-varying term, and the one a patch moves</em></span></div>
+<p>To be clear about what this is: these are <b>design choices, not discovered
+laws</b>. We are writing the generating process, so we get to pick it. The
+interesting question is never whether the formula is &ldquo;right&rdquo; &mdash; it
+is whether a market populated by agents with partial, delayed and noisy knowledge of
+V<sub>0</sub> produces prices that behave like real ones. That is a real question with
+a real answer, and it is answerable precisely <em>because</em> we control the truth.</p>
+
+<div class="key"><span class="lab">How to present this on paper</span>
+<p>Put <b>&ldquo;Limit Order Book &amp; Matching Engine&rdquo;</b> on the CV, with the
+theme as a parenthetical at most. Lead with the numbers: throughput, p99 latency, the
+data-structure change that bought the most. Then let the theme come out in
+conversation, where it works entirely in your favour &mdash; it is disarming, it is
+memorable, and it gives you a natural bridge into twenty minutes of genuine
+microstructure discussion. Theme on paper is a risk; theme in conversation is an
+asset.</p></div>
+
+<h2 class="part"><span class="num">Part 7</span>What we build, in what order, and
+why</h2>
+<p class="standfirst">Six sub-projects, each independently shippable. We are starting
+the first slice of the first one, and nothing else.</p>
+
+<p>The original spec is four phases and seven stages &mdash; realistically six to ten
+weeks. Designing all of it now would mean designing the UI against assumptions the
+engine has not yet tested. So it is decomposed, and each piece gets its own design,
+plan and build cycle:</p>
+
+<table>
+<tr><th style="width:8mm"></th><th style="width:42mm">Sub-project</th>
+    <th style="width:54mm">Ships</th><th>Needs</th></tr>
+<tr><td class="mono"><b>A</b></td><td><b>Engine core</b> <span class="pill">now</span></td>
+    <td>The book, the order types, cancel/modify, a Python reference, fuzz and
+        determinism tests</td><td>&mdash;</td></tr>
+<tr><td class="mono"><b>B</b></td><td>Flow generator</td>
+    <td>Noise and momentum agents; a live tape in the terminal</td><td>A</td></tr>
+<tr><td class="mono"><b>C</b></td><td>Optimisation &amp; benchmarks</td>
+    <td>v1&ndash;v3, the latency harness, <b>the numbers</b></td><td>A, B</td></tr>
+<tr><td class="mono"><b>D</b></td><td>UI &amp; gateway</td>
+    <td>WebSocket feed, ladder, tape, candles, latency panel</td><td>A, B</td></tr>
+<tr><td class="mono"><b>E</b></td><td>Smart agents</td>
+    <td>Avellaneda&ndash;Stoikov maker, arbitrageur, Pok&eacute;mon fundamentals</td>
+    <td>B</td></tr>
+<tr><td class="mono"><b>F</b></td><td>Analysis</td>
+    <td>Stylized facts, impact curve, P&amp;L attribution, the write-up</td><td>E</td></tr>
+</table>
+
+<p>Note the critical path to the checkpoint your mentor asked for &mdash; throughput
+and latency numbers &mdash; is <b>A &rarr; B &rarr; C</b>. D, E and F are all
+valuable and none of them are on it.</p>
+
+<h3>Sub-project A, split in two</h3>
+<p>Even A is too much for one green commit, so it ships in two slices. The point of
+the split is that <b>A1&rsquo;s tests are what make A2 safe</b> &mdash; the invariant
+checks and the Python differential harness are written before the fiddly order types
+they are meant to police.</p>
+
+<table>
+<tr><th style="width:14mm">Slice</th><th>Contents</th></tr>
+<tr><td class="mono"><b>A1</b></td><td>One instrument &middot; limit and market orders
+    &middot; cancel &middot; partial fills &middot; price-time priority &middot;
+    the replay CLI &middot; the Python reference &middot; determinism and fuzz
+    tests. <b>Green, pushed, demoable.</b></td></tr>
+<tr><td class="mono"><b>A2</b></td><td>IOC &middot; FOK &middot; post-only &middot;
+    modify with the priority rules from Part 3 &middot; self-trade prevention
+    &middot; multiple instruments.</td></tr>
+</table>
+
+<h3>The shape of the code</h3>
+<pre>libpokex/                  <span class="c">static lib &middot; no I/O, no threads, no clock</span>
+  types.hpp                <span class="c">Price, Qty, OrderId, Side, Order, Sequence</span>
+  events.hpp               <span class="c">commands + events, and their text encoding</span>
+  book_concept.hpp         <span class="c">the five operations, documented as a contract</span>
+  book_v0_map.hpp          <span class="c">std::map + deque &mdash; the baseline, kept forever</span>
+  matching.hpp             <span class="c">template&lt;Book&gt; &mdash; Part 2's loop, written ONCE</span>
+
+pokex-replay               <span class="c">CLI: commands.txt &rarr; events.txt. Pure. Deterministic.</span>
+reference/engine.py        <span class="c">an independent reimplementation, same file formats</span>
+tests/                     <span class="c">golden &middot; property/fuzz &middot; differential</span>
+</pre>
+
+<p>Two decisions in there are worth restating, because they are the ones that pay off
+later:</p>
+<ul>
+<li><b>The engine is a pure function.</b> Commands in, events out. No sockets, no
+threads, no database, no clock. Every later sub-project &mdash; the agents, the
+WebSocket gateway, even the lock-free ring buffer in v4 &mdash; attaches
+<em>around</em> that function without modifying it.</li>
+<li><b>The book is swapped at compile time,</b> via
+<code>template&lt;typename Book&gt;</code> rather than a virtual base class. A virtual
+call is an indirect jump that defeats inlining and pollutes the branch predictor
+&mdash; so using one here would mean measuring our own abstraction instead of the
+data structure. The same test suite is instantiated against every version, which is
+what keeps four implementations from silently drifting apart and quietly invalidating
+the benchmark.</li>
+</ul>
+
+<h3>How we know it is correct</h3>
+<p>Three layers, weakest to strongest:</p>
+<ol>
+<li><b>Golden tests.</b> Hand-written scenarios with expected event streams. These
+catch semantic mistakes &mdash; the maker-price rule, residual handling &mdash; and
+they double as documentation of intended behaviour.</li>
+<li><b>Property tests / fuzzing.</b> Throw a million random <em>valid</em> command
+sequences at the engine and assert the invariants after every single one: the book
+never crosses; no order fills more than its size; and for every order,
+<code>filled + resting + cancelled == original</code>. Fuzzing does not need to know
+the right answer, only what must never happen &mdash; which is why it finds the bugs
+you did not think to write a test for.</li>
+<li><b>Differential testing.</b> Run the C++ engine and the Python reference on the
+same random flows and require byte-identical output. Two independent implementations
+agreeing is the strongest correctness evidence available to us, and it is only
+possible because of the determinism rule from Part 2.</li>
+</ol>
+
+<h3>What &ldquo;done&rdquo; means for A1</h3>
+<ul>
+<li>Every test green, including a fuzz run of at least a million messages.</li>
+<li>The same input file replayed twice produces identical bytes.</li>
+<li>C++ and Python agree on ten thousand randomly generated flows.</li>
+<li>Clean under AddressSanitizer and UndefinedBehaviorSanitizer.</li>
+<li>A README that a stranger can follow to build and run it.</li>
+</ul>
+<p>Note what is <em>not</em> on that list: any performance number at all. A1 is
+allowed to be slow. Making it fast is sub-project C, and doing it in that order is
+what makes the eventual speed claim believable rather than decorative.</p>
+
+<div class="key"><span class="lab">The bullet we are working towards</span>
+<p>Everything above is in service of being able to write one sentence and defend it
+for twenty minutes: <em>&ldquo;Built a limit order book and matching engine in C++;
+replaced a std::map book with an array-indexed price ladder, an intrusive free-list
+allocator and an open-addressing ID index, taking sustained throughput from X to Y
+orders/sec and p99 matching latency from A to B &micro;s on an identical replayed
+order flow, verified byte-identical against a Python reference implementation.&rdquo;</em></p>
+<p>Note that every number in it is one <b>you measured</b>, and every claim is one
+the tests can prove. That is the difference between a project and a portfolio piece.</p></div>
+<h2 class="part"><span class="num">Glossary</span>Every term, one line each</h2><p class="standfirst">In alphabetical order, for when you are half-way through a conversation and need one fast.</p><dl class="gloss"><dt>Adverse selection</dt><dd>The tendency for your resting orders to be filled precisely by people who know something you do not. The market maker's central risk.</dd><dt>Aggressive / passive</dt><dd>An aggressive order trades immediately against the book (a taker). A passive order rests and waits (a maker).</dd><dt>Ask (offer)</dt><dd>A price at which someone is willing to sell. Asks sit above the spread.</dd><dt>Bid</dt><dd>A price at which someone is willing to buy. Bids sit below the spread.</dd><dt>Cache line</dt><dd>The 64-byte block the CPU always fetches as a unit. Data layout is about getting what you need next into the line you already have.</dd><dt>Cointegration</dt><dd>Two individually random-walking prices whose difference is stationary. The basis of statistical arbitrage.</dd><dt>Crossed book</dt><dd>An illegal state where the best bid is at or above the best ask. Can exist only for the instant before the engine resolves it.</dd><dt>Depth</dt><dd>How much quantity rests at each price level. Determines the cost of trading size.</dd><dt>Determinism</dt><dd>Same input bytes produce byte-identical output bytes, always. Requires no clocks, no randomness, no allocation-dependent iteration inside the engine.</dd><dt>False sharing</dt><dd>Two threads writing different variables that happen to share a cache line, causing them to fight over it. A slowdown with no logical cause.</dd><dt>FIFO</dt><dd>First in, first out. The queue discipline within a single price level.</dd><dt>Fill-or-kill (FOK)</dt><dd>Fill the entire quantity immediately or do nothing at all.</dd><dt>Immediate-or-cancel (IOC)</dt><dd>Take whatever is available right now; cancel the remainder rather than resting it.</dd><dt>Intrusive list</dt><dd>A linked list whose next/prev pointers live inside the element itself, so element and links share a cache line.</dd><dt>Inventory risk</dt><dd>The exposure a market maker carries from holding a position it did not want, acquired as a side effect of providing liquidity.</dd><dt>Kurtosis</dt><dd>The normalised fourth moment of a distribution. 3 for a Normal; higher means fatter tails. Financial returns are typically 4&ndash;20.</dd><dt>Limit order</dt><dd>An order with a price limit. Trades at that price or better, and rests if it cannot.</dd><dt>Liquidity</dt><dd>The ability to trade meaningful size, quickly, without moving the price. Has three dimensions: tightness, depth, resiliency.</dd><dt>Maker / taker</dt><dd>The maker's order was resting and provided liquidity; the taker arrived and consumed it. Trades print at the maker's price.</dd><dt>Market order</dt><dd>An order with no price limit. Always fills, at whatever the book costs.</dd><dt>Microprice</dt><dd>A fair-value estimate weighting each side's price by the <em>opposite</em> side's quantity, so book imbalance pulls the estimate.</dd><dt>Mid</dt><dd>The average of best bid and best ask. A convention, not a tradeable price.</dd><dt>Object pool / free list</dt><dd>Pre-allocating all the memory once and handing it out from a list, so the hot path never calls malloc.</dd><dt>Open addressing</dt><dd>A hash table that resolves collisions by probing nearby slots rather than chaining a linked list, avoiding pointer chasing.</dd><dt>Poisson process</dt><dd>Events arriving independently at a constant average rate; the gaps between them are exponentially distributed and memoryless.</dd><dt>Post-only</dt><dd>An order that must rest. Rejected if it would trade immediately, guaranteeing maker status and the associated rebate.</dd><dt>Price improvement</dt><dd>Getting a better price than your limit, because you traded at the resting order's price rather than your own.</dd><dt>Price-time priority</dt><dd>The matching rule: better price first, then earlier arrival. Time priority is the payment for patience.</dd><dt>Rebate</dt><dd>A small payment exchanges make to makers, funded by a fee on takers, to encourage resting liquidity.</dd><dt>Reservation price</dt><dd>In Avellaneda&ndash;Stoikov, the price at which a maker is genuinely indifferent &mdash; the mid, shifted against its own inventory.</dd><dt>Resiliency</dt><dd>How quickly the book refills after being consumed. The third and least-discussed dimension of liquidity.</dd><dt>Self-trade prevention</dt><dd>Refusing to match a participant against itself, because such trades fake the public volume signal (wash trading).</dd><dt>Sharpe ratio</dt><dd>Excess return divided by its standard deviation, annualised. Blind to fat tails, so quote maximum drawdown alongside it.</dd><dt>Slippage</dt><dd>The gap between the price you expected and the volume-weighted price you actually got. The cost of urgency and of size.</dd><dt>Spread</dt><dd>Best ask minus best bid. Not a fee &mdash; the price of immediacy.</dd><dt>SPSC ring buffer</dt><dd>Single-producer, single-consumer queue. Lets an ingress thread hand work to a matching thread without locks.</dd><dt>Stylized facts</dt><dd>Statistical properties found in essentially all real return series: fat tails, volatility clustering, near-zero return autocorrelation.</dd><dt>Tick</dt><dd>The smallest permitted price increment. Prices are integer counts of ticks, which is what makes an array-indexed book possible.</dd><dt>Top of book</dt><dd>The best bid and best ask together. The only two prices most participants ever look at.</dd><dt>Volatility</dt><dd>The standard deviation of returns. Not constant &mdash; it clusters.</dd><dt>Volatility clustering</dt><dd>Big moves follow big moves and quiet follows quiet. Visible as positive autocorrelation in |returns|.</dd><dt>VWAP</dt><dd>Volume-weighted average price. What a multi-level fill actually cost, in one number.</dd><dt>Wash trading</dt><dd>Trading with yourself to manufacture apparent volume. Illegal manipulation; the reason self-trade prevention exists.</dd></dl></div></body></html>
