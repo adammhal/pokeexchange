@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "pokex/book_v0_map.hpp"
+#include "pokex/all_books.hpp"
 #include "pokex/events.hpp"
 #include "pokex/matching.hpp"
 
@@ -25,6 +25,7 @@ inline std::string render(const Event& e) {
             case RejectReason::ZeroQuantity: o << "zero_quantity"; break;
             case RejectReason::DuplicateOrderId: o << "duplicate_order_id"; break;
             case RejectReason::UnknownOrder: o << "unknown_order"; break;
+            case RejectReason::PriceOutOfRange: o << "price_out_of_range"; break;
           }
         } else if constexpr (std::is_same_v<T, Trade>) {
           o << "TRD maker=" << v.maker_id << " taker=" << v.taker_id
@@ -37,7 +38,14 @@ inline std::string render(const Event& e) {
   return o.str();
 }
 
+// Every book version, for TEMPLATE_TEST_CASE. Adding a version here
+// automatically subjects it to the entire suite: golden, property and fuzz.
+#define POKEX_ALL_BOOKS \
+  pokex::BookV0Map, pokex::BookV1Ladder, pokex::BookV2Pool, pokex::BookV3Hash
+
 // A harness that drives the engine and collects the event transcript.
+// Generic over the book, so one suite covers every version.
+template <typename BookT>
 class Harness {
  public:
   void limit(OrderId id, Side side, Price px, Quantity qty) {
@@ -67,10 +75,10 @@ class Harness {
     return out;
   }
 
-  MatchingEngine<BookV0Map>& engine() { return engine_; }
+  MatchingEngine<BookT>& engine() { return engine_; }
 
  private:
-  MatchingEngine<BookV0Map> engine_{};
+  MatchingEngine<BookT> engine_{};
   std::vector<Event> events_{};
 };
 

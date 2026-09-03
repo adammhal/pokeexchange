@@ -4,6 +4,7 @@ project(pokex LANGUAGES CXX VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
@@ -26,6 +27,10 @@ endif()
 
 add_executable(pokex-replay src/replay_main.cpp)
 target_link_libraries(pokex-replay PRIVATE pokex pokex_warnings)
+
+add_executable(pokex-bench src/bench_main.cpp)
+target_include_directories(pokex-bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(pokex-bench PRIVATE pokex pokex_warnings)
 
 option(POKEX_BUILD_TESTS "Build the test suite" ON)
 if(POKEX_BUILD_TESTS)
@@ -52,9 +57,11 @@ if(POKEX_BUILD_TESTS)
   # CTest rather than in the C++ binary.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_FOUND)
-    add_test(NAME differential_vs_python_reference
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_differential.py
-              --replay $<TARGET_FILE:pokex-replay> --flows 10000)
+    foreach(book v0 v1 v2 v3)
+      add_test(NAME differential_vs_python_reference_${book}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_differential.py
+                --replay $<TARGET_FILE:pokex-replay> --book ${book} --flows 10000)
+    endforeach()
     add_test(NAME replay_is_deterministic
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_determinism.py
               --replay $<TARGET_FILE:pokex-replay>)

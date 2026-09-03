@@ -26,6 +26,7 @@ enum class RejectReason : std::uint8_t {
   ZeroQuantity,
   DuplicateOrderId,
   UnknownOrder,
+  PriceOutOfRange,
 };
 
 struct Accepted {

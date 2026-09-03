@@ -34,6 +34,13 @@ class MatchingEngine {
       emit(Event{Rejected{n.id, RejectReason::ZeroQuantity}});
       return;
     }
+    // Only limit orders carry a meaningful price. A market order's price field
+    // is meaningless (and is conventionally 0, which is out of range), so range
+    // checking it would reject every market order ever sent.
+    if (n.type == OrderType::Limit && (n.price < kMinPrice || n.price > kMaxPrice)) {
+      emit(Event{Rejected{n.id, RejectReason::PriceOutOfRange}});
+      return;
+    }
     if (book_.contains(n.id)) {
       emit(Event{Rejected{n.id, RejectReason::DuplicateOrderId}});
       return;

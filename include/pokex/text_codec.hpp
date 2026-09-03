@@ -102,6 +102,7 @@ inline std::string reason_name(RejectReason r) {
     case RejectReason::ZeroQuantity: return "zero_quantity";
     case RejectReason::DuplicateOrderId: return "duplicate_order_id";
     case RejectReason::UnknownOrder: return "unknown_order";
+    case RejectReason::PriceOutOfRange: return "price_out_of_range";
   }
   return "unknown";
 }

@@ -29,6 +29,12 @@ def flow(rng, start_id, n):
         lines.append(f"N {issued[0]} B L 100 5")           # duplicate id
     if rng.random() < 0.30:
         lines.append(f"C {start_id + 100000}")             # unknown order
+    if rng.random() < 0.25:
+        lines.append(f"N {start_id + 500} B L 0 10")       # price below domain
+    if rng.random() < 0.25:
+        lines.append(f"N {start_id + 501} S L 70000 10")   # price above domain
+    if rng.random() < 0.15:
+        lines.append(f"N {start_id + 502} B L -3 10")      # negative price
     rng.shuffle(lines) if False else None
     return lines
 

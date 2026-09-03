@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 
 namespace pokex {
@@ -14,6 +15,15 @@ using OrderId = std::uint64_t;
 // command. There is no clock anywhere in the engine, which is what makes the
 // output byte-identical across runs and machines.
 using Sequence = std::uint64_t;
+
+// An array-indexed price ladder (v1 onward) can only be indexed by a bounded
+// integer, so the tick domain is fixed here and enforced by the engine for every
+// book version. Enforcing it only inside v1 would make v0 and v1 disagree on
+// out-of-range input, which would break the cross-version equivalence the whole
+// benchmark claim rests on.
+inline constexpr Price kMinPrice = 1;
+inline constexpr Price kMaxPrice = 65535;
+inline constexpr std::size_t kPriceLevels = static_cast<std::size_t>(kMaxPrice) + 1;
 
 enum class Side : std::uint8_t { Buy, Sell };
 

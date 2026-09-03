@@ -15,6 +15,8 @@ stronger evidence than any hand-written test suite.
 """
 import sys
 
+MIN_PRICE, MAX_PRICE = 1, 65535
+
 BUY, SELL = "B", "S"
 LIMIT, MARKET = "L", "M"
 
@@ -62,6 +64,11 @@ class Engine:
     def new_order(self, oid, side, otype, price, qty, out):
         if qty == 0:
             out.append(f"R {oid} zero_quantity")
+            return
+        # Only limit orders carry a meaningful price; a market order's price
+        # field is conventionally 0, which is deliberately out of range.
+        if otype == LIMIT and not (MIN_PRICE <= price <= MAX_PRICE):
+            out.append(f"R {oid} price_out_of_range")
             return
         if self.contains(oid):
             out.append(f"R {oid} duplicate_order_id")

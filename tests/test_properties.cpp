@@ -1,3 +1,4 @@
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -25,6 +26,7 @@ struct Accounting {
   bool accepted{false};
 };
 
+template <typename BookT>
 class Fuzzer {
  public:
   explicit Fuzzer(std::uint64_t seed) : rng_(seed) {}
@@ -167,7 +169,7 @@ class Fuzzer {
   }
 
   std::mt19937_64 rng_;
-  MatchingEngine<BookV0Map> engine_{};
+  MatchingEngine<BookT> engine_{};
   std::unordered_map<OrderId, Accounting> book_{};
   std::vector<OrderId> live_{};
   OrderId next_id_{1};
@@ -177,8 +179,9 @@ class Fuzzer {
 };
 
 // Replays a fixed command script and returns the event transcript.
+template <typename BookT>
 std::vector<std::string> replay(const std::vector<Command>& script) {
-  MatchingEngine<BookV0Map> engine;
+  MatchingEngine<BookT> engine;
   std::vector<std::string> out;
   for (const auto& c : script)
     engine.submit(c, [&](const Event& e) { out.push_back(render(e)); });
@@ -211,40 +214,53 @@ std::vector<Command> random_script(std::uint64_t seed, int n) {
 
 }  // namespace
 
-TEST_CASE("invariants hold over random order flow", "[property]") {
+TEMPLATE_TEST_CASE("invariants hold over random order flow", "[property][book]", POKEX_ALL_BOOKS) {
   for (std::uint64_t seed : {1u, 2u, 3u, 12345u, 99991u}) {
-    Fuzzer f(seed);
+    Fuzzer<TestType> f(seed);
     f.run(4000);
     CHECK(f.trades() > 0);        // the flow actually exercised matching
     CHECK(f.cancels_sent() > 0);  // and the cancel path
   }
 }
 
-TEST_CASE("invariants hold over a long random run", "[fuzz]") {
-  Fuzzer f(0xC0FFEE);
+TEMPLATE_TEST_CASE("invariants hold over a long random run", "[fuzz][book]", POKEX_ALL_BOOKS) {
+  Fuzzer<TestType> f(0xC0FFEE);
   f.run(1'000'000, 5000);
   CHECK(f.messages_sent() == 1'000'000);
   CHECK(f.trades() > 0);
 }
 
-TEST_CASE("replaying the same script twice produces identical output", "[determinism]") {
+TEMPLATE_TEST_CASE("replaying the same script twice produces identical output", "[determinism][book]", POKEX_ALL_BOOKS) {
   for (std::uint64_t seed : {7u, 8u, 424242u}) {
     const auto script = random_script(seed, 3000);
-    const auto first = replay(script);
-    const auto second = replay(script);
+    const auto first = replay<TestType>(script);
+    const auto second = replay<TestType>(script);
     REQUIRE(first.size() > 0);
     CHECK(first == second);
   }
 }
 
-TEST_CASE("two engines fed the same script agree at every step", "[determinism]") {
+TEMPLATE_TEST_CASE("two engines fed the same script agree at every step", "[determinism][book]", POKEX_ALL_BOOKS) {
   const auto script = random_script(31337, 2000);
-  MatchingEngine<BookV0Map> a, b;
+  MatchingEngine<TestType> a, b;
   for (const auto& c : script) {
     std::vector<std::string> ea, eb;
     a.submit(c, [&](const Event& e) { ea.push_back(render(e)); });
     b.submit(c, [&](const Event& e) { eb.push_back(render(e)); });
     REQUIRE(ea == eb);
     REQUIRE(a.sequence() == b.sequence());
+  }
+}
+
+// The benchmark's whole claim is "same work, different speed". That claim is
+// only meaningful if the versions provably do the same work, which is this test.
+TEST_CASE("all book versions produce identical event streams", "[equivalence]") {
+  for (std::uint64_t seed : {1u, 2u, 77u, 4242u, 987654u}) {
+    const auto script = random_script(seed, 4000);
+    const auto v0 = replay<pokex::BookV0Map>(script);
+    REQUIRE(v0.size() > 1000);  // the flow is actually doing something
+    CHECK(replay<pokex::BookV1Ladder>(script) == v0);
+    CHECK(replay<pokex::BookV2Pool>(script) == v0);
+    CHECK(replay<pokex::BookV3Hash>(script) == v0);
   }
 }

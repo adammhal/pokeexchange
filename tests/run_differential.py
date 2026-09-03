@@ -19,6 +19,7 @@ def main():
     ap.add_argument("--flows", type=int, default=10000)
     ap.add_argument("--per-flow", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--book", default="v0")
     a = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -33,13 +34,13 @@ def main():
         script.write_text(gen.stdout)
         commands = sum(1 for l in gen.stdout.splitlines() if l and not l.startswith("---"))
 
-        subprocess.run([a.replay, str(script), str(cpp_out)], check=False)
+        subprocess.run([a.replay, "--book", a.book, str(script), str(cpp_out)], check=False)
         subprocess.run([sys.executable, str(ROOT / "reference" / "engine.py"),
                         str(script), str(py_out)], check=True)
 
         cpp, py = cpp_out.read_text(), py_out.read_text()
         if cpp == py:
-            print(f"differential OK: {a.flows} flows, {commands} commands, "
+            print(f"differential OK ({a.book}): {a.flows} flows, {commands} commands, "
                   f"{len(cpp.splitlines())} events, byte-identical")
             return 0
 
