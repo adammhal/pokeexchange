@@ -28,6 +28,9 @@ endif()
 add_executable(pokex-replay src/replay_main.cpp)
 target_link_libraries(pokex-replay PRIVATE pokex pokex_warnings)
 
+add_executable(pokex-sim src/sim_main.cpp)
+target_link_libraries(pokex-sim PRIVATE pokex pokex_warnings)
+
 add_executable(pokex-bench src/bench_main.cpp)
 target_include_directories(pokex-bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pokex-bench PRIVATE pokex pokex_warnings)
@@ -44,7 +47,8 @@ if(POKEX_BUILD_TESTS)
 
   add_executable(pokex-tests
     tests/test_matching.cpp
-    tests/test_properties.cpp)
+    tests/test_properties.cpp
+    tests/test_sim.cpp)
   target_include_directories(pokex-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
   target_link_libraries(pokex-tests PRIVATE pokex pokex_warnings Catch2::Catch2WithMain)
 
@@ -62,6 +66,9 @@ if(POKEX_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_differential.py
                 --replay $<TARGET_FILE:pokex-replay> --book ${book} --flows 10000)
     endforeach()
+    add_test(NAME sim_is_deterministic
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sim_determinism.py
+              --sim $<TARGET_FILE:pokex-sim>)
     add_test(NAME replay_is_deterministic
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_determinism.py
               --replay $<TARGET_FILE:pokex-replay>)
