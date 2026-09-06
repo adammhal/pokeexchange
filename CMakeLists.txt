@@ -61,10 +61,18 @@ if(POKEX_BUILD_TESTS)
   # CTest rather than in the C++ binary.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_FOUND)
+    # Each flow gets a fresh engine, and v1's construction cost is proportional
+    # to the price domain rather than to the number of orders: it builds 65,536
+    # std::deque levels per side. That is irrelevant in production, where the
+    # book is constructed once, but at 10,000 flows under a sanitizer it
+    # dominates the whole test run. So the count is tunable, and the sanitizer
+    # build uses fewer.
+    set(POKEX_DIFF_FLOWS 10000 CACHE STRING "Flows per differential test")
     foreach(book v0 v1 v2 v3)
       add_test(NAME differential_vs_python_reference_${book}
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_differential.py
-                --replay $<TARGET_FILE:pokex-replay> --book ${book} --flows 10000)
+                --replay $<TARGET_FILE:pokex-replay> --book ${book}
+                --flows ${POKEX_DIFF_FLOWS})
     endforeach()
     add_test(NAME sim_is_deterministic
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sim_determinism.py

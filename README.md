@@ -120,6 +120,14 @@ nothing. Throughput and mean come from bulk timing with no per-call clock and
 are the numbers to trust. p99.9 and max resolve real outliers, including the
 pool and the hash table doubling in size.
 
+One cost worth naming, because it is easy to miss: **v1's construction time is
+proportional to the price domain, not to the number of orders.** It builds
+65,536 `std::deque` levels per side, so a fresh engine costs a few megabytes of
+writes before it has seen a single order. That is irrelevant in production,
+where you construct the book once and run it all day, but it made the
+differential test 68x slower than v0 because that harness builds a fresh engine
+per flow. v2 and v3 avoid it because a price level there is just two integers.
+
 The first version of this benchmark was worthless and the reason is in the git
 history: it used 201 price levels and a few thousand resting orders, so v0's
 `std::map` fit entirely in L1 cache and every price level held about a dozen
