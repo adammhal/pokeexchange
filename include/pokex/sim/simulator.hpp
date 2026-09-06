@@ -38,9 +38,21 @@ struct Config {
   double fundamental_vol = 0.00035;  // per tick, lognormal
 
   // Market maker: quotes both sides, skews against its own inventory.
-  double mm_gamma = 0.55;       // how hard inventory pushes the quotes
-  double mm_half_spread = 1.0;  // in ticks; must be tight enough to reach the top
-  double mm_vol_k = 900.0;      // how much realised vol widens the spread
+  //
+  // It prices off its own lagged, noisy estimate of fair value, NOT off the
+  // book's mid. That distinction is load-bearing. Its post-only quotes sit at
+  // the top of the book, so the mid *is* its quotes; deriving its reservation
+  // price from the mid made it quote around its own quotes, a closed loop with
+  // no exogenous anchor that random-walked 21% away from fair value.
+  //
+  // The lag is not a workaround, it is the point: the maker learns fair value
+  // slowly while informed flow sees it at once, and that gap is exactly the
+  // adverse selection a real maker is paid to bear.
+  double mm_gamma = 0.55;        // how hard inventory pushes the quotes
+  double mm_half_spread = 1.0;   // in ticks; tight enough to reach the top
+  double mm_vol_k = 900.0;       // how much realised vol widens the spread
+  double mm_value_alpha = 0.04;  // how fast its view of fair value catches up
+  double mm_value_noise = 0.0015;
   Quantity mm_size = 60;
 
   // Liquidity provider: strictly passive, never crosses the spread. It ages its
@@ -139,7 +151,7 @@ class Simulator {
     agents_.push_back({"Mean Reversion", 0, 0, 0});
     agents_.push_back({"Liquidity Provider", 0, 0, 0});
     agents_.push_back({"Informed Flow", 0, 0, 0});
-    mid_ = ema_fast_ = ema_slow_ = fundamental_;
+    mid_ = ema_fast_ = ema_slow_ = mm_value_ = fundamental_;
     last_trade_ = static_cast<Price>(std::llround(fundamental_));
     open_candle(last_trade_);
   }
@@ -279,10 +291,15 @@ class Simulator {
     if (mm_ask_ && owner_.count(mm_ask_)) send_cancel(kMaker, mm_ask_);
     mm_bid_ = mm_ask_ = 0;
 
+    // Track fair value with lag and noise, from the fundamental rather than
+    // from the book. See the note on mm_value_alpha above.
+    mm_value_ += cfg_.mm_value_alpha *
+                 (fundamental_ * (1.0 + cfg_.mm_value_noise * normal()) - mm_value_);
+
     const Agent& a = agents_[kMaker];
-    const double reservation = mid_ - static_cast<double>(a.inventory) * cfg_.mm_gamma;
-    const double half =
-        cfg_.mm_half_spread + cfg_.mm_vol_k * std::sqrt(std::max(vol_, 0.0)) * mid_ * 0.001;
+    const double reservation = mm_value_ - static_cast<double>(a.inventory) * cfg_.mm_gamma;
+    const double half = cfg_.mm_half_spread +
+                        cfg_.mm_vol_k * std::sqrt(std::max(vol_, 0.0)) * mm_value_ * 0.001;
 
     Price bid = clamp(static_cast<Price>(std::llround(reservation - half)));
     Price ask = clamp(static_cast<Price>(std::llround(reservation + half)));
@@ -462,6 +479,7 @@ class Simulator {
   std::uint64_t tick_{0};
 
   double fundamental_{};
+  double mm_value_{};  // the maker's lagged, noisy view of fair value
   double mid_{};
   double ema_fast_{};
   double ema_slow_{};

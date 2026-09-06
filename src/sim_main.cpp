@@ -108,7 +108,10 @@ int main(int argc, char** argv) {
     std::cerr << "pokex-sim: cannot write " << path << "\n";
     return 2;
   }
+  const bool as_js = path.size() > 3 && path.compare(path.size() - 3, 3, ".js") == 0;
+  if (as_js) out << "window.POKEX_SESSION=";
   write_session(out, sim);
+  if (as_js) out << ";\n";
   out.flush();
 
   const Stats& s = sim.stats();

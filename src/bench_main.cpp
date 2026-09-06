@@ -261,6 +261,8 @@ void write_json(const std::string& path, const Options& opt, bench::ClockFacts c
     std::cerr << "pokex-bench: cannot write " << path << "\n";
     return;
   }
+  const bool as_js = path.size() > 3 && path.compare(path.size() - 3, 3, ".js") == 0;
+  if (as_js) out << "window.POKEX_BENCH=";
   out << "{\n  \"messages_per_scenario\": " << opt.messages
       << ",\n  \"seed\": " << opt.seed
       << ",\n  \"clock_overhead_ns\": " << clock.overhead_ns
@@ -301,7 +303,9 @@ void write_json(const std::string& path, const Options& opt, bench::ClockFacts c
     }
     out << "      ]\n    }" << (si + 1 < runs.size() ? "," : "") << "\n";
   }
-  out << "  ]\n}\n";
+  out << "  ]\n}";
+  if (as_js) out << ";";
+  out << "\n";
   std::cout << "wrote " << path << "\n";
 }
 

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PokeExchange &middot; CHZ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<div class="terminal">
+
+  <!-- ─────────────────────────────────────────────── header -->
+  <header class="head">
+    <div class="brand">
+      <span class="mark">POKE<b>EXCHANGE</b></span>
+      <span class="build">limit order book &middot; v3 engine</span>
+    </div>
+
+    <div class="quote">
+      <div class="sym">
+        <span class="ticker">CHZ</span>
+        <span class="name" id="instrument">Charizard</span>
+      </div>
+      <div class="last">
+        <span class="px" id="lastPx">&mdash;</span>
+        <span class="chg" id="lastChg">&mdash;</span>
+      </div>
+      <dl class="micro">
+        <div><dt>bid</dt><dd id="mBid">&mdash;</dd></div>
+        <div><dt>ask</dt><dd id="mAsk">&mdash;</dd></div>
+        <div><dt>spread</dt><dd id="mSpread">&mdash;</dd></div>
+        <div><dt>value</dt><dd id="mFund">&mdash;</dd></div>
+      </dl>
+    </div>
+
+    <div class="transport">
+      <button id="btnPlay" class="tbtn tbtn-primary" aria-label="Play or pause">
+        <span id="playIcon">&#9654;</span>
+      </button>
+      <div class="speeds" role="group" aria-label="Playback speed">
+        <button class="tbtn spd" data-speed="0.5">.5&times;</button>
+        <button class="tbtn spd is-on" data-speed="1">1&times;</button>
+        <button class="tbtn spd" data-speed="4">4&times;</button>
+        <button class="tbtn spd" data-speed="16">16&times;</button>
+      </div>
+      <div class="scrub">
+        <input type="range" id="scrub" min="0" max="0" value="0" step="1"
+               aria-label="Session position">
+        <div class="clock"><span id="frameNo">0</span><span class="sep">/</span><span id="frameTot">0</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─────────────────────────────────────────────── order book -->
+  <section class="panel book">
+    <div class="phead">
+      <h2>Order book</h2>
+      <span class="pnote" id="bookNote">depth &times; price</span>
+    </div>
+    <div class="ladder">
+      <div class="lside asks" id="asks"></div>
+      <div class="lgap">
+        <span class="lgap-mid" id="ladderMid">&mdash;</span>
+        <span class="lgap-lab">spread <b id="ladderSpread">&mdash;</b></span>
+      </div>
+      <div class="lside bids" id="bids"></div>
+    </div>
+    <div class="pfoot">
+      <span><i class="sw sw-bid"></i>bids</span>
+      <span><i class="sw sw-ask"></i>asks</span>
+      <span class="grow"></span>
+      <span id="bookTotals">&mdash;</span>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── charts -->
+  <section class="panel chart chart-px">
+    <div class="phead">
+      <h2>Price &amp; volume</h2>
+      <span class="pnote">candles per 50 engine ticks &middot; dashed line is fundamental value</span>
+    </div>
+    <canvas id="cCandles"></canvas>
+  </section>
+
+  <section class="panel chart chart-depth">
+    <div class="phead">
+      <h2>Cumulative depth</h2>
+      <span class="pnote">what it would cost to sweep the book</span>
+    </div>
+    <canvas id="cDepth"></canvas>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── right rail -->
+  <section class="panel agents">
+    <div class="phead">
+      <h2>Agents</h2>
+      <span class="pnote">mark to market</span>
+    </div>
+    <div id="board" class="board"></div>
+    <div class="pfoot pfoot-note" id="agentNote"></div>
+  </section>
+
+  <section class="panel tape">
+    <div class="phead">
+      <h2>Tape</h2>
+      <span class="pnote">coloured by aggressor</span>
+    </div>
+    <div class="tape-head"><span>price</span><span>qty</span><span>side</span></div>
+    <div id="tape" class="tape-rows"></div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── latency -->
+  <section class="panel latency">
+    <div class="phead">
+      <h2>Engine matching latency</h2>
+      <span class="pnote" id="latNote">&mdash;</span>
+    </div>
+    <div class="lat-grid" id="latGrid"></div>
+  </section>
+
+</div>
+
+<script src="data/session.js"></script>
+<script src="data/bench.js"></script>
+<script src="js/palette.js"></script>
+<script src="js/format.js"></script>
+<script src="js/ladder.js"></script>
+<script src="js/depth.js"></script>
+<script src="js/candles.js"></script>
+<script src="js/tape.js"></script>
+<script src="js/leaderboard.js"></script>
+<script src="js/latency.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

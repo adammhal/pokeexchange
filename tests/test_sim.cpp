@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -101,4 +102,33 @@ TEST_CASE("different seeds produce different sessions", "[sim]") {
   a.run();
   b.run();
   CHECK(digest(a) != digest(b));
+}
+
+// Prices have to stay tethered to fundamental value. They will not track it
+// exactly, and should not: discovering it is the market's job, and the whole
+// point of informed flow is that the tether is enforced by someone profiting
+// from slack in it. But a persistent double-digit dislocation means no agent is
+// anchored to anything exogenous.
+//
+// This caught a real bug. The market maker derived its reservation price from
+// the mid, the mid is derived from the book, and the maker's post-only quotes
+// sit at the top of the book, so the maker was quoting around its own quotes.
+// That loop has no anchor and random-walked 21% away from fair value.
+TEST_CASE("traded prices stay tethered to fundamental value", "[sim]") {
+  Config c;
+  c.seed = 42;
+  c.ticks = 60000;
+  c.frame_every = 50;
+  Simulator sim(c);
+  sim.run();
+
+  double worst = 0.0;
+  for (const Frame& f : sim.frames()) {
+    if (!f.candle.high || !f.fundamental) continue;
+    const double hi = std::abs(static_cast<double>(f.candle.high) - f.fundamental);
+    const double lo = std::abs(static_cast<double>(f.candle.low) - f.fundamental);
+    worst = std::max(worst, std::max(hi, lo) / f.fundamental);
+  }
+  CAPTURE(worst);
+  CHECK(worst < 0.06);
 }
