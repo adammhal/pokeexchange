@@ -35,5 +35,14 @@ jobs:
         run: cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DPOKEX_SANITIZE=ON
       - name: Build
         run: cmake --build build-asan -j
+      # Everything except the 1,000,000-message fuzz run. Under ASan and UBSan in
+      # a Debug build, that test costs about 30s per book version, times four
+      # versions, which is most of the job for little extra coverage: the
+      # property tests already drive every book through the same invariants
+      # under the same sanitizers. The full fuzz run still executes in the
+      # optimised build on both Linux and macOS above.
       - name: Test
-        run: ctest --test-dir build-asan --output-on-failure
+        run: ctest --test-dir build-asan --output-on-failure -E "long random run"
+
+      - name: Fuzz under sanitizers (shorter)
+        run: ./build-asan/pokex-tests "[property]" --order rand
