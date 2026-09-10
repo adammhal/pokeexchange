@@ -41,6 +41,7 @@ inline std::string render(const Event& e) {
             case CancelReason::UserRequested: o << "user"; break;
             case CancelReason::NoLiquidity: o << "no_liquidity"; break;
             case CancelReason::FillOrKillUnfillable: o << "fok_unfillable"; break;
+            case CancelReason::SelfTradePrevented: o << "self_trade"; break;
           }
         }
       },
@@ -58,20 +59,25 @@ inline std::string render(const Event& e) {
 template <typename BookT>
 class Harness {
  public:
-  void limit(OrderId id, Side side, Price px, Quantity qty) {
-    send(NewOrder{id, side, OrderType::Limit, px, qty});
+  void limit(OrderId id, Side side, Price px, Quantity qty, ParticipantId who = kAnonymous) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::GoodTillCancel,
+                  false, who});
   }
-  void market(OrderId id, Side side, Quantity qty) {
-    send(NewOrder{id, side, OrderType::Market, 0, qty});
+  void market(OrderId id, Side side, Quantity qty, ParticipantId who = kAnonymous) {
+    send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::GoodTillCancel,
+                  false, who});
   }
-  void ioc(OrderId id, Side side, Price px, Quantity qty) {
-    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::ImmediateOrCancel});
+  void ioc(OrderId id, Side side, Price px, Quantity qty, ParticipantId who = kAnonymous) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::ImmediateOrCancel,
+                  false, who});
   }
-  void fok(OrderId id, Side side, Price px, Quantity qty) {
-    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::FillOrKill});
+  void fok(OrderId id, Side side, Price px, Quantity qty, ParticipantId who = kAnonymous) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::FillOrKill,
+                  false, who});
   }
-  void market_fok(OrderId id, Side side, Quantity qty) {
-    send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::FillOrKill});
+  void market_fok(OrderId id, Side side, Quantity qty, ParticipantId who = kAnonymous) {
+    send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::FillOrKill,
+                  false, who});
   }
   void post_only(OrderId id, Side side, Price px, Quantity qty) {
     send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::GoodTillCancel, true});

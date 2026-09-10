@@ -55,7 +55,8 @@ class MatchingEngine {
 
     // A probe carrying the terms but no sequence number yet, for the pre-trade
     // policy checks below. Neither of them may print a trade or touch the book.
-    const Order probe{n.id, n.side, n.type, n.price, n.quantity, n.quantity, 0};
+    const Order probe{n.id,        n.side,     n.type, n.price,
+                      n.quantity,  n.quantity, 0,      n.participant};
     const Side other = opposite(n.side);
 
     // Post-only is refused rather than executed, so it is settled before the
@@ -82,7 +83,8 @@ class MatchingEngine {
     const Sequence seq = ++seq_;
     emit(Event{Accepted{n.id, seq}});
 
-    Order order{n.id, n.side, n.type, n.price, n.quantity, n.quantity, seq};
+    Order order{n.id,       n.side,     n.type, n.price,
+                n.quantity, n.quantity, seq,    n.participant};
     match(order, n.tif, emit);
   }
 
@@ -98,8 +100,17 @@ class MatchingEngine {
       if (!best || !crosses(order, *best)) break;
 
       Order& resting = book_.front(other);  // oldest at the best price
-      const Quantity fill = std::min(order.remaining, resting.remaining);
 
+      // Stop rather than skip. Cancelling the incoming order is the simpler
+      // policy to reason about, and it means a participant's own resting order
+      // shields everything behind it from that participant.
+      if (blocks_self_trade(order, resting)) {
+        emit(Event{Canceled{order.id, order.remaining,
+                            CancelReason::SelfTradePrevented}});
+        return;
+      }
+
+      const Quantity fill = std::min(order.remaining, resting.remaining);
       emit(Event{Trade{resting.id, order.id, *best, fill, order.seq}});
       order.remaining -= fill;
       resting.remaining -= fill;
@@ -127,6 +138,9 @@ class MatchingEngine {
     std::uint64_t total = 0;
     book_.walk(side, [&](const Order& resting) {
       if (!crosses(incoming, resting.price)) return false;
+      // Matching would stop here, so this quantity is not available to us and
+      // neither is anything behind it.
+      if (blocks_self_trade(incoming, resting)) return false;
       total += resting.remaining;
       return total < needed;
     });
@@ -190,6 +204,7 @@ class MatchingEngine {
     }
 
     const Side side = resting->side;
+    const ParticipantId owner = resting->participant;  // a modify never changes it
     book_.cancel(m.id);
 
     const Sequence seq = ++seq_;
@@ -197,7 +212,8 @@ class MatchingEngine {
 
     // A resting order is always a good-till-cancel limit order, and a repriced
     // one may now cross, in which case it trades like any other aggressor.
-    Order moved{m.id, side, OrderType::Limit, m.price, m.quantity, new_remaining, seq};
+    Order moved{m.id,        side,          OrderType::Limit, m.price,
+                m.quantity,  new_remaining, seq,              owner};
     match(moved, TimeInForce::GoodTillCancel, emit);
   }
 
@@ -210,6 +226,16 @@ class MatchingEngine {
     }
     ++seq_;
     emit(Event{Canceled{c.id, removed->remaining, CancelReason::UserRequested}});
+  }
+
+  // Would matching these two manufacture a wash trade?
+  //
+  // An unattributed order (participant zero) carries no self-match identifier
+  // and is never prevented, which is how the optional tag behaves on real
+  // venues.
+  static constexpr bool blocks_self_trade(const Order& incoming, const Order& resting) {
+    return incoming.participant != kAnonymous &&
+           incoming.participant == resting.participant;
   }
 
   // Would this incoming order accept a trade at `best_other`?

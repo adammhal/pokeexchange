@@ -21,7 +21,8 @@
 //
 // Flags are optional and order-independent, so files written before they
 // existed still parse: GTC | IOC | FOK set the time in force, PO means
-// post-only.
+// post-only, and P:<n> attributes the order to a participant for self-trade
+// prevention.
 namespace pokex::codec {
 
 struct ParseResult {
@@ -118,7 +119,12 @@ inline ParseResult parse_command(std::string_view line) {
     else if (flag == "IOC") n.tif = TimeInForce::ImmediateOrCancel;
     else if (flag == "FOK") n.tif = TimeInForce::FillOrKill;
     else if (flag == "PO") n.post_only = true;
-    else return ParseResult::fail("unknown order flag '" + std::string(flag) + "'");
+    else if (flag.size() > 2 && flag.substr(0, 2) == "P:") {
+      if (!to_number(flag.substr(2), n.participant))
+        return ParseResult::fail("bad participant id");
+    } else {
+      return ParseResult::fail("unknown order flag '" + std::string(flag) + "'");
+    }
   }
   return ParseResult::ok(n);
 }
@@ -140,6 +146,7 @@ inline std::string cancel_reason_name(CancelReason r) {
     case CancelReason::UserRequested: return "user";
     case CancelReason::NoLiquidity: return "no_liquidity";
     case CancelReason::FillOrKillUnfillable: return "fok_unfillable";
+    case CancelReason::SelfTradePrevented: return "self_trade";
   }
   return "unknown";
 }

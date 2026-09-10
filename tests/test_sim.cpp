@@ -81,6 +81,11 @@ TEST_CASE("no agent ever trades with itself", "[sim]") {
     sim.run();
     REQUIRE(sim.stats().trades > 100);
     CHECK(sim.stats().self_trades == 0);
+    // The engine now enforces this too, since every agent is a participant.
+    // Zero here means the agent design was genuinely sufficient on its own and
+    // the engine never had to step in, rather than the engine quietly covering
+    // for a population that would otherwise wash-trade.
+    CHECK(sim.stats().self_trade_prevented == 0);
   }
 }
 

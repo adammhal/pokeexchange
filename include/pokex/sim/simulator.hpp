@@ -123,6 +123,10 @@ struct Stats {
   std::uint64_t cancels{};          // Canceled events, which also fire when a
                                     // market order's remainder is dropped
   std::uint64_t self_trades{};
+  // Orders the engine refused to self-match. The agent population is designed
+  // so that no agent both posts and takes, so this should stay at zero: it is
+  // a check on that claim, not a mechanism the simulation relies on.
+  std::uint64_t self_trade_prevented{};
   std::uint64_t orders{};
   std::uint64_t rejects{};
 };
@@ -197,12 +201,20 @@ class Simulator {
                                : (inventory - size >= -cfg_.position_limit);
   }
 
+  // Agents are participants, so the engine will refuse to let one of them
+  // trade with itself. Participant ids start at 1 because zero means
+  // unattributed, which is exempt from prevention.
+  static ParticipantId participant_of(int agent) {
+    return static_cast<ParticipantId>(agent + 1);
+  }
+
   OrderId send_limit(int agent, Side side, Price price, Quantity qty) {
     if (qty == 0 || !within_limit(agent, side, qty)) return 0;
     const OrderId id = next_id_++;
     owner_.emplace(id, Owner{agent, side, qty});
     ++stats_.orders;
-    engine_.submit(NewOrder{id, side, OrderType::Limit, clamp(price), qty},
+    engine_.submit(NewOrder{id, side, OrderType::Limit, clamp(price), qty,
+                            TimeInForce::GoodTillCancel, false, participant_of(agent)},
                    [this](const Event& e) { handle(e); });
     return id;
   }
@@ -212,7 +224,8 @@ class Simulator {
     const OrderId id = next_id_++;
     owner_.emplace(id, Owner{agent, side, qty});
     ++stats_.orders;
-    engine_.submit(NewOrder{id, side, OrderType::Market, 0, qty},
+    engine_.submit(NewOrder{id, side, OrderType::Market, 0, qty,
+                            TimeInForce::GoodTillCancel, false, participant_of(agent)},
                    [this](const Event& e) { handle(e); });
   }
 
@@ -230,6 +243,7 @@ class Simulator {
     }
     if (const auto* c = std::get_if<Canceled>(&event)) {
       ++stats_.cancels;
+      if (c->reason == CancelReason::SelfTradePrevented) ++stats_.self_trade_prevented;
       owner_.erase(c->id);
       return;
     }

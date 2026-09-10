@@ -61,6 +61,12 @@ class Engine:
             return best_other <= order["price"]
         return best_other >= order["price"]
 
+    @staticmethod
+    def blocks_self_trade(incoming, resting):
+        """Zero means no self-match identifier, so prevention does not apply."""
+        who = incoming.get("participant", 0)
+        return who != 0 and who == resting.get("participant", 0)
+
     def available(self, other, order, needed):
         """How much of `order` could fill right now, capped at `needed`."""
         prices = sorted(p for p, q in self.levels[other].items() if q)
@@ -71,13 +77,18 @@ class Engine:
             if not self.crosses(order, p):
                 break                        # priority order, so the rest are worse
             for o in self.levels[other][p]:
+                # Matching would stop here, so neither this nor anything behind
+                # it is available to us.
+                if self.blocks_self_trade(order, o):
+                    return total
                 total += o["remaining"]
                 if total >= needed:
                     return needed
         return total
 
     # ---------------------------------------------------------------- commands
-    def new_order(self, oid, side, otype, price, qty, out, tif=GTC, post_only=False):
+    def new_order(self, oid, side, otype, price, qty, out, tif=GTC,
+                  post_only=False, participant=0):
         if qty == 0:
             out.append(f"R {oid} zero_quantity")
             return
@@ -94,7 +105,8 @@ class Engine:
             return
 
         other = SELL if side == BUY else BUY
-        order = {"id": oid, "side": side, "type": otype, "price": price}
+        order = {"id": oid, "side": side, "type": otype, "price": price,
+                 "participant": participant}
 
         # Refused rather than executed, so it happens before acceptance and
         # before it consumes a sequence number.
@@ -114,12 +126,14 @@ class Engine:
         self.seq += 1
         seq = self.seq
         out.append(f"A {oid} {seq}")
-        self._work(oid, side, otype, price, qty, qty, seq, tif, out)
+        self._work(oid, side, otype, price, qty, qty, seq, tif, out, participant)
 
-    def _work(self, oid, side, otype, price, total, remaining, seq, tif, out):
+    def _work(self, oid, side, otype, price, total, remaining, seq, tif, out,
+              participant=0):
         """Match against the book, then deal with any remainder."""
         other = SELL if side == BUY else BUY
-        order = {"id": oid, "side": side, "type": otype, "price": price}
+        order = {"id": oid, "side": side, "type": otype, "price": price,
+                 "participant": participant}
 
         while remaining > 0:
             best = self.best(other)
@@ -129,6 +143,11 @@ class Engine:
                 break
             queue = self.levels[other][best]
             resting = queue[0]                       # oldest at the best price
+            # Stop rather than skip, so a participant's own resting order
+            # shields everything behind it from that participant.
+            if self.blocks_self_trade(order, resting):
+                out.append(f"X {oid} {remaining} self_trade")
+                return
             fill = min(remaining, resting["remaining"])
             out.append(f"T {resting['id']} {oid} {best} {fill} {seq}")
             remaining -= fill
@@ -143,7 +162,8 @@ class Engine:
         if otype == LIMIT and tif == GTC:
             self.levels[side].setdefault(price, []).append(
                 {"id": oid, "side": side, "type": otype, "price": price,
-                 "quantity": total, "remaining": remaining, "seq": seq})
+                 "quantity": total, "remaining": remaining, "seq": seq,
+                 "participant": participant})
         else:
             out.append(f"X {oid} {remaining} no_liquidity")
 
@@ -185,11 +205,12 @@ class Engine:
             return
 
         side = o["side"]
+        owner = o.get("participant", 0)              # a modify never changes it
         self.remove(oid)
         self.seq += 1
         seq = self.seq
         out.append(f"M {oid} {qty} {price} {seq} lost")
-        self._work(oid, side, LIMIT, price, qty, new_remaining, seq, GTC, out)
+        self._work(oid, side, LIMIT, price, qty, new_remaining, seq, GTC, out, owner)
 
     def cancel(self, oid, out):
         removed = self.remove(oid)
@@ -218,17 +239,19 @@ def run(lines, write):
             engine.modify(int(parts[1]), int(parts[2]), int(parts[3]), out)
         elif parts[0] == "N":
             oid, side, otype, price, qty = parts[1:6]
-            tif, post_only = GTC, False
+            tif, post_only, participant = GTC, False, 0
             for flag in parts[6:]:
                 if flag in (GTC, IOC, FOK):
                     tif = flag
                 elif flag == "PO":
                     post_only = True
+                elif flag.startswith("P:"):
+                    participant = int(flag[2:])
                 else:
                     print(f"reference: line {lineno}: unknown flag {flag!r}",
                           file=sys.stderr)
             engine.new_order(int(oid), side, otype, int(price), int(qty), out,
-                             tif, post_only)
+                             tif, post_only, participant)
         else:
             print(f"reference: line {lineno}: unknown command {parts[0]!r}",
                   file=sys.stderr)

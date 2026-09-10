@@ -27,6 +27,10 @@ def flow(rng, start_id, n):
         # Flags are exercised here too, or the differential would never compare
         # the IOC, FOK and post-only paths at all.
         flag = rng.choices(["", " IOC", " FOK", " PO"], weights=[70, 12, 10, 8])[0]
+        # Only three participants, so self-matches are frequent and prevention
+        # actually gets exercised. Some orders stay unattributed.
+        if rng.random() < 0.65:
+            flag += f" P:{rng.randint(1, 3)}"
         if rng.random() < 0.12:
             if flag == " PO":
                 flag = ""            # post-only market is a rejection, covered separately

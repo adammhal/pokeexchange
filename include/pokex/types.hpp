@@ -16,6 +16,15 @@ using OrderId = std::uint64_t;
 // output byte-identical across runs and machines.
 using Sequence = std::uint64_t;
 
+// Who owns an order, for self-trade prevention.
+//
+// Zero means unattributed, and prevention does not apply to it. That is not a
+// shortcut: it mirrors how venues actually work, where the self-match
+// prevention identifier is an optional tag and orders without one are simply
+// not subject to it (CME's SMP ID behaves this way).
+using ParticipantId = std::uint32_t;
+inline constexpr ParticipantId kAnonymous = 0;
+
 // An array-indexed price ladder (v1 onward) can only be indexed by a bounded
 // integer, so the tick domain is fixed here and enforced by the engine for every
 // book version. Enforcing it only inside v1 would make v0 and v1 disagree on
@@ -54,6 +63,7 @@ struct Order {
   Quantity quantity{};  // as originally submitted
   Quantity remaining{}; // still outstanding
   Sequence seq{};       // arrival order, and therefore time priority
+  ParticipantId participant{kAnonymous};
 };
 
 }  // namespace pokex

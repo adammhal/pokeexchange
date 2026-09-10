@@ -17,6 +17,7 @@ struct NewOrder {
   // Must rest. If it would trade on arrival it is rejected instead, which is
   // how a participant guarantees it will be the maker and never the taker.
   bool post_only{false};
+  ParticipantId participant{kAnonymous};
 };
 
 struct CancelOrder {
@@ -54,6 +55,7 @@ enum class CancelReason : std::uint8_t {
   UserRequested,
   NoLiquidity,           // a market or IOC remainder with nothing left to hit
   FillOrKillUnfillable,  // could not be filled in its entirety
+  SelfTradePrevented,    // it reached one of its own resting orders
 };
 
 struct Accepted {
