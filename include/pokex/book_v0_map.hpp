@@ -84,17 +84,24 @@ class BookV0Map {
     return total;
   }
 
-  // Visits every resting order on a side in strict priority order: best price
-  // first, and within a price, oldest first.
+  // Visits resting orders on a side in strict priority order. The callback
+  // returns false to stop.
   template <typename F>
-  void for_each(Side side, F&& fn) const {
+  void walk(Side side, F&& fn) const {
     if (side == Side::Buy) {
       for (auto it = bids_.rbegin(); it != bids_.rend(); ++it)
-        for (const auto& order : it->second) fn(order);
+        for (const auto& order : it->second)
+          if (!fn(order)) return;
     } else {
       for (const auto& [price, queue] : asks_)
-        for (const auto& order : queue) fn(order);
+        for (const auto& order : queue)
+          if (!fn(order)) return;
     }
+  }
+
+  template <typename F>
+  void for_each(Side side, F&& fn) const {
+    walk(side, [&](const Order& o) { fn(o); return true; });
   }
 
  private:

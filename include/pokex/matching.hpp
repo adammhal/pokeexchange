@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cstdint>
 #include <variant>
 
 #include "pokex/book_concept.hpp"
@@ -30,6 +31,7 @@ class MatchingEngine {
  private:
   template <typename Emit>
   void handle(const NewOrder& n, Emit& emit) {
+    // Validate the message's own fields first, then the state-dependent checks.
     if (n.quantity == 0) {
       emit(Event{Rejected{n.id, RejectReason::ZeroQuantity}});
       return;
@@ -41,8 +43,39 @@ class MatchingEngine {
       emit(Event{Rejected{n.id, RejectReason::PriceOutOfRange}});
       return;
     }
+    // An order that must not trade, at no particular price, can do nothing.
+    if (n.post_only && n.type == OrderType::Market) {
+      emit(Event{Rejected{n.id, RejectReason::PostOnlyMarketOrder}});
+      return;
+    }
     if (book_.contains(n.id)) {
       emit(Event{Rejected{n.id, RejectReason::DuplicateOrderId}});
+      return;
+    }
+
+    // A probe carrying the terms but no sequence number yet, for the pre-trade
+    // policy checks below. Neither of them may print a trade or touch the book.
+    const Order probe{n.id, n.side, n.type, n.price, n.quantity, n.quantity, 0};
+    const Side other = opposite(n.side);
+
+    // Post-only is refused rather than executed, so it is settled before the
+    // order is accepted and before it consumes a sequence number.
+    if (n.post_only) {
+      const auto best = book_.best(other);
+      if (best && crosses(probe, *best)) {
+        emit(Event{Rejected{n.id, RejectReason::PostOnlyWouldCross}});
+        return;
+      }
+    }
+
+    // Fill or kill is all or nothing, so feasibility has to be decided before
+    // any trade prints. Discovering it half way through would mean unwinding
+    // fills, and an engine that can unwind a fill has no audit trail worth the
+    // name. It is accepted first, because the order was well formed; it simply
+    // could not be filled.
+    if (n.tif == TimeInForce::FillOrKill && available(other, probe) < n.quantity) {
+      emit(Event{Accepted{n.id, ++seq_}});
+      emit(Event{Canceled{n.id, n.quantity, CancelReason::FillOrKillUnfillable}});
       return;
     }
 
@@ -50,7 +83,6 @@ class MatchingEngine {
     emit(Event{Accepted{n.id, seq}});
 
     Order order{n.id, n.side, n.type, n.price, n.quantity, n.quantity, seq};
-    const Side other = opposite(n.side);
 
     while (order.remaining > 0) {
       const auto best = book_.best(other);
@@ -68,11 +100,28 @@ class MatchingEngine {
     }
 
     if (order.remaining == 0) return;
-    if (order.type == OrderType::Limit) {
+
+    // Only a good-till-cancel limit order rests. Everything else gives up its
+    // remainder here.
+    if (order.type == OrderType::Limit && n.tif == TimeInForce::GoodTillCancel) {
       book_.insert(order);  // join the back of the queue and wait
     } else {
-      emit(Event{Canceled{order.id, order.remaining}});  // nothing left to hit
+      emit(Event{Canceled{order.id, order.remaining, CancelReason::NoLiquidity}});
     }
+  }
+
+  // How much of `incoming` could be filled right now, capped at what it wants.
+  // Walks the opposite side in priority order and stops at the first level the
+  // order would not accept, since everything past it is worse.
+  Quantity available(Side side, const Order& incoming) const {
+    const Quantity needed = incoming.remaining;
+    std::uint64_t total = 0;
+    book_.walk(side, [&](const Order& resting) {
+      if (!crosses(incoming, resting.price)) return false;
+      total += resting.remaining;
+      return total < needed;
+    });
+    return static_cast<Quantity>(std::min<std::uint64_t>(total, needed));
   }
 
   template <typename Emit>
@@ -83,7 +132,7 @@ class MatchingEngine {
       return;
     }
     ++seq_;
-    emit(Event{Canceled{c.id, removed->remaining}});
+    emit(Event{Canceled{c.id, removed->remaining, CancelReason::UserRequested}});
   }
 
   // Would this incoming order accept a trade at `best_other`?

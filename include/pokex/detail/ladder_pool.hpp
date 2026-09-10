@@ -135,13 +135,18 @@ class LadderPool {
   }
 
   template <typename F>
-  void for_each(Side side, F&& fn) const {
+  void walk(Side side, F&& fn) const {
     std::optional<Price> p = best(side);
     while (p) {
       for (NodeIndex i = level(side, *p).head; i != kNil; i = pool_[i].next)
-        fn(pool_[i].order);
+        if (!fn(pool_[i].order)) return;
       p = next_level(side, *p);
     }
+  }
+
+  template <typename F>
+  void for_each(Side side, F&& fn) const {
+    walk(side, [&](const Order& o) { fn(o); return true; });
   }
 
  private:

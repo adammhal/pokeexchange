@@ -29,6 +29,19 @@ enum class Side : std::uint8_t { Buy, Sell };
 
 enum class OrderType : std::uint8_t { Limit, Market };
 
+// How long an order is willing to wait. Orthogonal to OrderType: the type says
+// whether there is a price limit, the time in force says what happens to the
+// part that could not trade straight away.
+//
+// Only GoodTillCancel orders ever rest, so Order below carries neither this nor
+// the post-only flag. Both are properties of the request, not of a resting
+// order, and Order is the struct that sits in the hot pool.
+enum class TimeInForce : std::uint8_t {
+  GoodTillCancel,     // rest the remainder
+  ImmediateOrCancel,  // cancel the remainder
+  FillOrKill,         // all of it immediately, or none of it at all
+};
+
 constexpr Side opposite(Side s) noexcept {
   return s == Side::Buy ? Side::Sell : Side::Buy;
 }

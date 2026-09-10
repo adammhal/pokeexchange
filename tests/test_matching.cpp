@@ -89,13 +89,14 @@ TEMPLATE_TEST_CASE("a market order sweeps levels and cancels what it cannot fill
                           "TRD maker=2 taker=3 px=102 qty=150"});
   auto l = h.log();
   REQUIRE(!l.empty());
-  CHECK(l.back() == "CXL 3 unfilled=200");
+  CHECK(l.back() == "CXL 3 unfilled=200 no_liquidity");
 }
 
 TEMPLATE_TEST_CASE("a market order into an empty book is cancelled entirely", "[book]", POKEX_ALL_BOOKS) {
   Harness<TestType> h;
   h.market(1, Side::Buy, 100);
-  CHECK(h.log() == std::vector<std::string>{"ACK 1 seq=1", "CXL 1 unfilled=100"});
+  CHECK(h.log() == std::vector<std::string>{"ACK 1 seq=1",
+                                             "CXL 1 unfilled=100 no_liquidity"});
 }
 
 TEMPLATE_TEST_CASE("a limit order does not trade through its limit price", "[book]", POKEX_ALL_BOOKS) {
@@ -112,7 +113,7 @@ TEMPLATE_TEST_CASE("cancel removes a resting order and reports its unfilled quan
   h.limit(1, Side::Buy, 99, 100);
   h.clear();
   h.cancel(1);
-  CHECK(h.log() == std::vector<std::string>{"CXL 1 unfilled=100"});
+  CHECK(h.log() == std::vector<std::string>{"CXL 1 unfilled=100 user"});
   CHECK(h.engine().book().best(Side::Buy) == std::nullopt);
 }
 
@@ -122,7 +123,7 @@ TEMPLATE_TEST_CASE("cancelling a partially filled order reports only what is lef
   h.limit(2, Side::Buy, 101, 30);
   h.clear();
   h.cancel(1);
-  CHECK(h.log() == std::vector<std::string>{"CXL 1 unfilled=70"});
+  CHECK(h.log() == std::vector<std::string>{"CXL 1 unfilled=70 user"});
 }
 
 TEMPLATE_TEST_CASE("cancelling an unknown order is rejected", "[book]", POKEX_ALL_BOOKS) {

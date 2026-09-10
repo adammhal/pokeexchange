@@ -26,12 +26,19 @@ inline std::string render(const Event& e) {
             case RejectReason::DuplicateOrderId: o << "duplicate_order_id"; break;
             case RejectReason::UnknownOrder: o << "unknown_order"; break;
             case RejectReason::PriceOutOfRange: o << "price_out_of_range"; break;
+            case RejectReason::PostOnlyWouldCross: o << "post_only_would_cross"; break;
+            case RejectReason::PostOnlyMarketOrder: o << "post_only_market"; break;
           }
         } else if constexpr (std::is_same_v<T, Trade>) {
           o << "TRD maker=" << v.maker_id << " taker=" << v.taker_id
             << " px=" << v.price << " qty=" << v.quantity;
         } else {
-          o << "CXL " << v.id << " unfilled=" << v.unfilled_quantity;
+          o << "CXL " << v.id << " unfilled=" << v.unfilled_quantity << " ";
+          switch (v.reason) {
+            case CancelReason::UserRequested: o << "user"; break;
+            case CancelReason::NoLiquidity: o << "no_liquidity"; break;
+            case CancelReason::FillOrKillUnfillable: o << "fok_unfillable"; break;
+          }
         }
       },
       e);
@@ -53,6 +60,21 @@ class Harness {
   }
   void market(OrderId id, Side side, Quantity qty) {
     send(NewOrder{id, side, OrderType::Market, 0, qty});
+  }
+  void ioc(OrderId id, Side side, Price px, Quantity qty) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::ImmediateOrCancel});
+  }
+  void fok(OrderId id, Side side, Price px, Quantity qty) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::FillOrKill});
+  }
+  void market_fok(OrderId id, Side side, Quantity qty) {
+    send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::FillOrKill});
+  }
+  void post_only(OrderId id, Side side, Price px, Quantity qty) {
+    send(NewOrder{id, side, OrderType::Limit, px, qty, TimeInForce::GoodTillCancel, true});
+  }
+  void post_only_market(OrderId id, Side side, Quantity qty) {
+    send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::GoodTillCancel, true});
   }
   void cancel(OrderId id) { send(CancelOrder{id}); }
 

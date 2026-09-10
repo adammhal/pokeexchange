@@ -19,6 +19,7 @@ MIN_PRICE, MAX_PRICE = 1, 65535
 
 BUY, SELL = "B", "S"
 LIMIT, MARKET = "L", "M"
+GTC, IOC, FOK = "GTC", "IOC", "FOK"
 
 
 class Engine:
@@ -60,8 +61,23 @@ class Engine:
             return best_other <= order["price"]
         return best_other >= order["price"]
 
+    def available(self, other, order, needed):
+        """How much of `order` could fill right now, capped at `needed`."""
+        prices = sorted(p for p, q in self.levels[other].items() if q)
+        if other == BUY:
+            prices.reverse()                 # best bid is the highest
+        total = 0
+        for p in prices:
+            if not self.crosses(order, p):
+                break                        # priority order, so the rest are worse
+            for o in self.levels[other][p]:
+                total += o["remaining"]
+                if total >= needed:
+                    return needed
+        return total
+
     # ---------------------------------------------------------------- commands
-    def new_order(self, oid, side, otype, price, qty, out):
+    def new_order(self, oid, side, otype, price, qty, out, tif=GTC, post_only=False):
         if qty == 0:
             out.append(f"R {oid} zero_quantity")
             return
@@ -70,8 +86,29 @@ class Engine:
         if otype == LIMIT and not (MIN_PRICE <= price <= MAX_PRICE):
             out.append(f"R {oid} price_out_of_range")
             return
+        if post_only and otype == MARKET:
+            out.append(f"R {oid} post_only_market")
+            return
         if self.contains(oid):
             out.append(f"R {oid} duplicate_order_id")
+            return
+
+        other = SELL if side == BUY else BUY
+        order = {"id": oid, "side": side, "type": otype, "price": price}
+
+        # Refused rather than executed, so it happens before acceptance and
+        # before it consumes a sequence number.
+        if post_only:
+            best = self.best(other)
+            if best is not None and self.crosses(order, best):
+                out.append(f"R {oid} post_only_would_cross")
+                return
+
+        # All or nothing, decided before any trade prints.
+        if tif == FOK and self.available(other, order, qty) < qty:
+            self.seq += 1
+            out.append(f"A {oid} {self.seq}")
+            out.append(f"X {oid} {qty} fok_unfillable")
             return
 
         self.seq += 1
@@ -79,14 +116,12 @@ class Engine:
         out.append(f"A {oid} {seq}")
 
         remaining = qty
-        other = SELL if side == BUY else BUY
-        order = {"id": oid, "side": side, "type": otype, "price": price}
 
         while remaining > 0:
             best = self.best(other)
             if best is None:
                 break
-            if not self.crosses({**order, "price": price}, best):
+            if not self.crosses(order, best):
                 break
             queue = self.levels[other][best]
             resting = queue[0]                       # oldest at the best price
@@ -101,12 +136,12 @@ class Engine:
 
         if remaining == 0:
             return
-        if otype == LIMIT:
+        if otype == LIMIT and tif == GTC:
             self.levels[side].setdefault(price, []).append(
                 {"id": oid, "side": side, "type": otype, "price": price,
                  "quantity": qty, "remaining": remaining, "seq": seq})
         else:
-            out.append(f"X {oid} {remaining}")
+            out.append(f"X {oid} {remaining} no_liquidity")
 
     def cancel(self, oid, out):
         removed = self.remove(oid)
@@ -114,7 +149,7 @@ class Engine:
             out.append(f"R {oid} unknown_order")
             return
         self.seq += 1
-        out.append(f"X {oid} {removed['remaining']}")
+        out.append(f"X {oid} {removed['remaining']} user")
 
 
 def run(lines, write):
@@ -132,8 +167,18 @@ def run(lines, write):
         if parts[0] == "C":
             engine.cancel(int(parts[1]), out)
         elif parts[0] == "N":
-            _, oid, side, otype, price, qty = parts
-            engine.new_order(int(oid), side, otype, int(price), int(qty), out)
+            oid, side, otype, price, qty = parts[1:6]
+            tif, post_only = GTC, False
+            for flag in parts[6:]:
+                if flag in (GTC, IOC, FOK):
+                    tif = flag
+                elif flag == "PO":
+                    post_only = True
+                else:
+                    print(f"reference: line {lineno}: unknown flag {flag!r}",
+                          file=sys.stderr)
+            engine.new_order(int(oid), side, otype, int(price), int(qty), out,
+                             tif, post_only)
         else:
             print(f"reference: line {lineno}: unknown command {parts[0]!r}",
                   file=sys.stderr)

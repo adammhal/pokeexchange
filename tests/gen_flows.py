@@ -18,10 +18,16 @@ def flow(rng, start_id, n):
         oid = start_id + len(issued)
         issued.append(oid)
         side = rng.choice("BS")
+        # Flags are exercised here too, or the differential would never compare
+        # the IOC, FOK and post-only paths at all.
+        flag = rng.choices(["", " IOC", " FOK", " PO"], weights=[70, 12, 10, 8])[0]
         if rng.random() < 0.12:
-            lines.append(f"N {oid} {side} M 0 {rng.randint(1, 200)}")
+            if flag == " PO":
+                flag = ""            # post-only market is a rejection, covered separately
+            lines.append(f"N {oid} {side} M 0 {rng.randint(1, 200)}{flag}")
         else:
-            lines.append(f"N {oid} {side} L {rng.randint(95, 105)} {rng.randint(1, 200)}")
+            lines.append(
+                f"N {oid} {side} L {rng.randint(95, 105)} {rng.randint(1, 200)}{flag}")
     # A few deliberately invalid messages, so the reject paths are covered too.
     if rng.random() < 0.30:
         lines.append(f"N {start_id} B L 100 0")            # zero quantity
@@ -35,6 +41,8 @@ def flow(rng, start_id, n):
         lines.append(f"N {start_id + 501} S L 70000 10")   # price above domain
     if rng.random() < 0.15:
         lines.append(f"N {start_id + 502} B L -3 10")      # negative price
+    if rng.random() < 0.20:
+        lines.append(f"N {start_id + 503} B M 0 10 PO")    # post-only market
     rng.shuffle(lines) if False else None
     return lines
 

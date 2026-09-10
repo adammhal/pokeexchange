@@ -76,6 +76,11 @@ class BookV2Pool {
   }
 
   template <typename F>
+  void walk(Side side, F&& fn) const {
+    core_.walk(side, static_cast<F&&>(fn));
+  }
+
+  template <typename F>
   void for_each(Side side, F&& fn) const {
     core_.for_each(side, static_cast<F&&>(fn));
   }

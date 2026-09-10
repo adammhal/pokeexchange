@@ -13,6 +13,10 @@ struct NewOrder {
   OrderType type{};
   Price price{};
   Quantity quantity{};
+  TimeInForce tif{TimeInForce::GoodTillCancel};
+  // Must rest. If it would trade on arrival it is rejected instead, which is
+  // how a participant guarantees it will be the maker and never the taker.
+  bool post_only{false};
 };
 
 struct CancelOrder {
@@ -27,6 +31,18 @@ enum class RejectReason : std::uint8_t {
   DuplicateOrderId,
   UnknownOrder,
   PriceOutOfRange,
+  PostOnlyWouldCross,   // it would have traded, so it is refused
+  PostOnlyMarketOrder,  // a market order that must not trade is a contradiction
+};
+
+// Why an order stopped being live. Without this, "cancelled" conflates a
+// participant withdrawing an order with the engine dropping a remainder it
+// could not fill, and an audit trail that cannot tell those apart is not much
+// of an audit trail.
+enum class CancelReason : std::uint8_t {
+  UserRequested,
+  NoLiquidity,           // a market or IOC remainder with nothing left to hit
+  FillOrKillUnfillable,  // could not be filled in its entirety
 };
 
 struct Accepted {
@@ -52,6 +68,7 @@ struct Trade {
 struct Canceled {
   OrderId id{};
   Quantity unfilled_quantity{};
+  CancelReason reason{CancelReason::UserRequested};
 };
 
 using Event = std::variant<Accepted, Rejected, Trade, Canceled>;

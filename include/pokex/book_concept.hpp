@@ -40,6 +40,16 @@ concept Book = requires(B book, const B const_book, Side side, const Order& orde
 
   // Remove by id, returning the order as it stood. nullopt if not present.
   { book.cancel(id) } -> std::same_as<std::optional<Order>>;
+
+  // Visit resting orders on a side in strict priority order: best price first,
+  // and oldest first within a price. The callback returns false to stop.
+  //
+  // Fill-or-kill needs this. It has to know whether the whole quantity is
+  // available BEFORE printing any trade, because discovering it mid-match would
+  // mean unwinding fills, and an engine that can unwind a fill has no audit
+  // trail worth the name. The early exit matters because a deep book can hold
+  // millions of orders and the answer is usually known within a few.
+  { const_book.walk(side, [](const Order&) { return true; }) };
 };
 
 }  // namespace pokex

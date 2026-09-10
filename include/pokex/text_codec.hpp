@@ -12,11 +12,15 @@
 // can read is worth far more during development than a fast parser, and this
 // lives outside the engine so it never touches a latency measurement.
 //
-//   commands            events
-//   N <id> B|S L|M <px> <qty>      A <id> <seq>
-//   C <id>                         R <id> <reason>
-//                                  T <maker> <taker> <px> <qty> <seq>
-//                                  X <id> <unfilled>
+//   commands                              events
+//   N <id> B|S L|M <px> <qty> [flags...]   A <id> <seq>
+//   C <id>                                 R <id> <reason>
+//                                          T <maker> <taker> <px> <qty> <seq>
+//                                          X <id> <unfilled> <reason>
+//
+// Flags are optional and order-independent, so files written before they
+// existed still parse: GTC | IOC | FOK set the time in force, PO means
+// post-only.
 namespace pokex::codec {
 
 struct ParseResult {
@@ -94,6 +98,15 @@ inline ParseResult parse_command(std::string_view line) {
   else return ParseResult::fail("type must be L or M");
   if (!to_number(px_tok, n.price)) return ParseResult::fail("bad price");
   if (!to_number(qty_tok, n.quantity)) return ParseResult::fail("bad quantity");
+
+  std::string_view flag;
+  while (next_token(rest, flag)) {
+    if (flag == "GTC") n.tif = TimeInForce::GoodTillCancel;
+    else if (flag == "IOC") n.tif = TimeInForce::ImmediateOrCancel;
+    else if (flag == "FOK") n.tif = TimeInForce::FillOrKill;
+    else if (flag == "PO") n.post_only = true;
+    else return ParseResult::fail("unknown order flag '" + std::string(flag) + "'");
+  }
   return ParseResult::ok(n);
 }
 
@@ -103,6 +116,17 @@ inline std::string reason_name(RejectReason r) {
     case RejectReason::DuplicateOrderId: return "duplicate_order_id";
     case RejectReason::UnknownOrder: return "unknown_order";
     case RejectReason::PriceOutOfRange: return "price_out_of_range";
+    case RejectReason::PostOnlyWouldCross: return "post_only_would_cross";
+    case RejectReason::PostOnlyMarketOrder: return "post_only_market";
+  }
+  return "unknown";
+}
+
+inline std::string cancel_reason_name(CancelReason r) {
+  switch (r) {
+    case CancelReason::UserRequested: return "user";
+    case CancelReason::NoLiquidity: return "no_liquidity";
+    case CancelReason::FillOrKillUnfillable: return "fok_unfillable";
   }
   return "unknown";
 }
@@ -120,7 +144,8 @@ inline std::string format_event(const Event& e) {
                  " " + std::to_string(v.price) + " " + std::to_string(v.quantity) +
                  " " + std::to_string(v.seq);
         } else {
-          return "X " + std::to_string(v.id) + " " + std::to_string(v.unfilled_quantity);
+          return "X " + std::to_string(v.id) + " " + std::to_string(v.unfilled_quantity) +
+                 " " + cancel_reason_name(v.reason);
         }
       },
       e);

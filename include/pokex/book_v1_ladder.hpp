@@ -107,13 +107,19 @@ class BookV1Ladder {
   }
 
   template <typename F>
-  void for_each(Side side, F&& fn) const {
+  void walk(Side side, F&& fn) const {
     const auto& lv = (side == Side::Buy) ? bids_ : asks_;
     std::optional<Price> p = best(side);
     while (p) {
-      for (const auto& order : lv[static_cast<std::size_t>(*p)]) fn(order);
+      for (const auto& order : lv[static_cast<std::size_t>(*p)])
+        if (!fn(order)) return;
       p = next_level(side, *p);
     }
+  }
+
+  template <typename F>
+  void for_each(Side side, F&& fn) const {
+    walk(side, [&](const Order& o) { fn(o); return true; });
   }
 
  private:
