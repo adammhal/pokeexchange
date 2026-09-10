@@ -28,6 +28,7 @@ inline std::string render(const Event& e) {
             case RejectReason::PriceOutOfRange: o << "price_out_of_range"; break;
             case RejectReason::PostOnlyWouldCross: o << "post_only_would_cross"; break;
             case RejectReason::PostOnlyMarketOrder: o << "post_only_market"; break;
+            case RejectReason::UnknownInstrument: o << "unknown_instrument"; break;
           }
         } else if constexpr (std::is_same_v<T, Trade>) {
           o << "TRD maker=" << v.maker_id << " taker=" << v.taker_id

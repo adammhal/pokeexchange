@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--per-flow", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--book", default="v0")
+    ap.add_argument("--instruments", type=int, default=3)
     a = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -29,13 +30,15 @@ def main():
         gen = subprocess.run(
             [sys.executable, str(ROOT / "tests" / "gen_flows.py"),
              "--flows", str(a.flows), "--per-flow", str(a.per_flow),
-             "--seed", str(a.seed)],
+             "--seed", str(a.seed), "--instruments", str(a.instruments)],
             capture_output=True, text=True, check=True)
         script.write_text(gen.stdout)
         commands = sum(1 for l in gen.stdout.splitlines() if l and not l.startswith("---"))
 
-        subprocess.run([a.replay, "--book", a.book, str(script), str(cpp_out)], check=False)
+        subprocess.run([a.replay, "--book", a.book, "--instruments",
+                        str(a.instruments), str(script), str(cpp_out)], check=False)
         subprocess.run([sys.executable, str(ROOT / "reference" / "engine.py"),
+                        "--instruments", str(a.instruments),
                         str(script), str(py_out)], check=True)
 
         cpp, py = cpp_out.read_text(), py_out.read_text()

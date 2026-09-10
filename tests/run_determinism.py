@@ -34,7 +34,8 @@ def main():
         digests = []
         for i in (1, 2):
             out = tmp / f"out{i}.txt"
-            subprocess.run([a.replay, str(script), str(out)], check=False)
+            subprocess.run([a.replay, "--instruments", "3", str(script), str(out)],
+                           check=False)
             digests.append(hashlib.sha256(out.read_bytes()).hexdigest())
 
         if digests[0] != digests[1]:

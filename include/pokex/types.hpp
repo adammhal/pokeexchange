@@ -25,6 +25,13 @@ using Sequence = std::uint64_t;
 using ParticipantId = std::uint32_t;
 inline constexpr ParticipantId kAnonymous = 0;
 
+// Which book an order belongs to. Order ids are unique WITHIN an instrument,
+// not across the exchange, which is why every command carries one. That is the
+// FIX convention (a cancel request names its symbol) and it also keeps the
+// cancel path free of a global id-to-instrument lookup, which matters because
+// cancel is the hot path.
+using InstrumentId = std::uint16_t;
+
 // An array-indexed price ladder (v1 onward) can only be indexed by a bounded
 // integer, so the tick domain is fixed here and enforced by the engine for every
 // book version. Enforcing it only inside v1 would make v0 and v1 disagree on

@@ -18,10 +18,12 @@ struct NewOrder {
   // how a participant guarantees it will be the maker and never the taker.
   bool post_only{false};
   ParticipantId participant{kAnonymous};
+  InstrumentId instrument{0};
 };
 
 struct CancelOrder {
   OrderId id{};
+  InstrumentId instrument{0};
 };
 
 // Change a resting order's price or quantity.
@@ -33,6 +35,7 @@ struct ModifyOrder {
   OrderId id{};
   Price price{};
   Quantity quantity{};
+  InstrumentId instrument{0};
 };
 
 using Command = std::variant<NewOrder, CancelOrder, ModifyOrder>;
@@ -45,6 +48,7 @@ enum class RejectReason : std::uint8_t {
   PriceOutOfRange,
   PostOnlyWouldCross,   // it would have traded, so it is refused
   PostOnlyMarketOrder,  // a market order that must not trade is a contradiction
+  UnknownInstrument,
 };
 
 // Why an order stopped being live. Without this, "cancelled" conflates a

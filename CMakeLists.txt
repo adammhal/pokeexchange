@@ -51,6 +51,7 @@ if(POKEX_BUILD_TESTS)
     tests/test_order_types.cpp
     tests/test_modify.cpp
     tests/test_self_trade.cpp
+    tests/test_exchange.cpp
     tests/test_sim.cpp)
   target_include_directories(pokex-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
   target_link_libraries(pokex-tests PRIVATE pokex pokex_warnings Catch2::Catch2WithMain)

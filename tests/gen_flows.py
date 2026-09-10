@@ -9,20 +9,24 @@ import argparse
 import random
 
 
-def flow(rng, start_id, n):
+def flow(rng, start_id, n, instruments):
     lines, issued = [], []
     for _ in range(n):
+        inst = rng.randrange(instruments)
         if issued and rng.random() < 0.45:
-            lines.append(f"C {rng.choice(issued)}")
+            tid, tinst = rng.choice(issued)
+            # Sometimes aim the cancel at the wrong instrument, which must not
+            # find the order.
+            lines.append(f"C {tinst if rng.random() < 0.9 else (tinst + 1) % instruments} {tid}")
             continue
         if issued and rng.random() < 0.22:
             # Modifies, covering all three priority outcomes: same price
             # smaller (keeps), same price larger (loses), new price (loses).
-            target = rng.choice(issued)
-            lines.append(f"M {target} {rng.randint(95, 105)} {rng.randint(1, 250)}")
+            tid, tinst = rng.choice(issued)
+            lines.append(f"M {tinst} {tid} {rng.randint(95, 105)} {rng.randint(1, 250)}")
             continue
         oid = start_id + len(issued)
-        issued.append(oid)
+        issued.append((oid, inst))
         side = rng.choice("BS")
         # Flags are exercised here too, or the differential would never compare
         # the IOC, FOK and post-only paths at all.
@@ -34,25 +38,29 @@ def flow(rng, start_id, n):
         if rng.random() < 0.12:
             if flag == " PO":
                 flag = ""            # post-only market is a rejection, covered separately
-            lines.append(f"N {oid} {side} M 0 {rng.randint(1, 200)}{flag}")
+            lines.append(f"N {inst} {oid} {side} M 0 {rng.randint(1, 200)}{flag}")
         else:
             lines.append(
-                f"N {oid} {side} L {rng.randint(95, 105)} {rng.randint(1, 200)}{flag}")
+                f"N {inst} {oid} {side} L {rng.randint(95, 105)} "
+                f"{rng.randint(1, 200)}{flag}")
     # A few deliberately invalid messages, so the reject paths are covered too.
     if rng.random() < 0.30:
-        lines.append(f"N {start_id} B L 100 0")            # zero quantity
+        lines.append(f"N 0 {start_id} B L 100 0")           # zero quantity
     if rng.random() < 0.30 and issued:
-        lines.append(f"N {issued[0]} B L 100 5")           # duplicate id
+        did, dinst = issued[0]
+        lines.append(f"N {dinst} {did} B L 100 5")          # duplicate id
     if rng.random() < 0.30:
-        lines.append(f"C {start_id + 100000}")             # unknown order
+        lines.append(f"C 0 {start_id + 100000}")            # unknown order
     if rng.random() < 0.25:
-        lines.append(f"N {start_id + 500} B L 0 10")       # price below domain
+        lines.append(f"N 0 {start_id + 500} B L 0 10")      # price below domain
     if rng.random() < 0.25:
-        lines.append(f"N {start_id + 501} S L 70000 10")   # price above domain
+        lines.append(f"N 0 {start_id + 501} S L 70000 10")  # price above domain
     if rng.random() < 0.15:
-        lines.append(f"N {start_id + 502} B L -3 10")      # negative price
+        lines.append(f"N 0 {start_id + 502} B L -3 10")     # negative price
     if rng.random() < 0.20:
-        lines.append(f"N {start_id + 503} B M 0 10 PO")    # post-only market
+        lines.append(f"N 0 {start_id + 503} B M 0 10 PO")   # post-only market
+    if rng.random() < 0.20:
+        lines.append(f"N {instruments + 3} {start_id + 504} B L 100 10")  # bad instrument
     rng.shuffle(lines) if False else None
     return lines
 
@@ -62,6 +70,7 @@ def main():
     ap.add_argument("--flows", type=int, default=1000)
     ap.add_argument("--per-flow", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--instruments", type=int, default=3)
     a = ap.parse_args()
 
     rng = random.Random(a.seed)
@@ -69,7 +78,7 @@ def main():
     for i in range(a.flows):
         if i:
             out.append("---")
-        out.extend(flow(rng, 1 + i * 1000, a.per_flow))
+        out.extend(flow(rng, 1 + i * 1000, a.per_flow, a.instruments))
     print("\n".join(out))
 
 

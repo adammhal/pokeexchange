@@ -11,7 +11,7 @@ formats and the rules themselves.
 Two independent implementations agreeing on the same random flows is much
 stronger evidence than any hand-written test suite.
 
-    reference/engine.py [input] [output]      (defaults: stdin, stdout)
+    reference/engine.py [--instruments N] [input] [output]
 """
 import sys
 
@@ -221,26 +221,42 @@ class Engine:
         out.append(f"X {oid} {removed['remaining']} user")
 
 
-def run(lines, write):
-    engine = Engine()
+def run(lines, write, instruments=1):
+    """Route each command to its instrument's book, tagging events on the way
+    out. Engine itself knows nothing about instruments, exactly as the C++
+    MatchingEngine does not."""
+    books = [Engine() for _ in range(instruments)]
+
     for lineno, raw in enumerate(lines, 1):
         line = raw.strip()
         if line.startswith("---"):
-            engine = Engine()
+            books = [Engine() for _ in range(instruments)]
             write("---")
             continue
         if not line or line.startswith("#"):
             continue
+
         parts = line.split()
+        if len(parts) < 3:
+            print(f"reference: line {lineno}: too few fields", file=sys.stderr)
+            continue
+        inst = int(parts[1])
+        oid = int(parts[2])
+
+        if inst >= len(books):
+            write(f"R {inst} {oid} unknown_instrument")
+            continue
+
+        engine = books[inst]
         out = []
         if parts[0] == "C":
-            engine.cancel(int(parts[1]), out)
+            engine.cancel(oid, out)
         elif parts[0] == "M":
-            engine.modify(int(parts[1]), int(parts[2]), int(parts[3]), out)
+            engine.modify(oid, int(parts[3]), int(parts[4]), out)
         elif parts[0] == "N":
-            oid, side, otype, price, qty = parts[1:6]
+            side, otype, price, qty = parts[3], parts[4], parts[5], parts[6]
             tif, post_only, participant = GTC, False, 0
-            for flag in parts[6:]:
+            for flag in parts[7:]:
                 if flag in (GTC, IOC, FOK):
                     tif = flag
                 elif flag == "PO":
@@ -250,21 +266,29 @@ def run(lines, write):
                 else:
                     print(f"reference: line {lineno}: unknown flag {flag!r}",
                           file=sys.stderr)
-            engine.new_order(int(oid), side, otype, int(price), int(qty), out,
+            engine.new_order(oid, side, otype, int(price), int(qty), out,
                              tif, post_only, participant)
         else:
             print(f"reference: line {lineno}: unknown command {parts[0]!r}",
                   file=sys.stderr)
             continue
+
         for e in out:
-            write(e)
+            letter, tail = e.split(" ", 1)
+            write(f"{letter} {inst} {tail}")
 
 
 def main(argv):
-    src = open(argv[1]) if len(argv) > 1 else sys.stdin
-    dst = open(argv[2], "w") if len(argv) > 2 else sys.stdout
+    args = list(argv[1:])
+    instruments = 1
+    if "--instruments" in args:
+        i = args.index("--instruments")
+        instruments = int(args[i + 1])
+        del args[i:i + 2]
+    src = open(args[0]) if args else sys.stdin
+    dst = open(args[1], "w") if len(args) > 1 else sys.stdout
     buf = []
-    run(src, buf.append)
+    run(src, buf.append, instruments)
     dst.write("".join(e + "\n" for e in buf))
     dst.flush()
     return 0

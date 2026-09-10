@@ -12,12 +12,15 @@
 // can read is worth far more during development than a fast parser, and this
 // lives outside the engine so it never touches a latency measurement.
 //
-//   commands                              events
-//   N <id> B|S L|M <px> <qty> [flags...]   A <id> <seq>
-//   C <id>                                 R <id> <reason>
-//   M <id> <px> <qty>                      T <maker> <taker> <px> <qty> <seq>
-//                                          M <id> <qty> <px> <seq> kept|lost
-//                                          X <id> <unfilled> <reason>
+//   commands                                    events
+//   N <inst> <id> B|S L|M <px> <qty> [flags...]   A <inst> <id> <seq>
+//   C <inst> <id>                                 R <inst> <id> <reason>
+//   M <inst> <id> <px> <qty>                      T <inst> <maker> <taker> <px> <qty> <seq>
+//                                                 M <inst> <id> <qty> <px> <seq> kept|lost
+//                                                 X <inst> <id> <unfilled> <reason>
+//
+// Every line names its instrument, so a file is self-describing and a single
+// recording can carry a whole venue.
 //
 // Flags are optional and order-independent, so files written before they
 // existed still parse: GTC | IOC | FOK set the time in force, PO means
@@ -74,17 +77,23 @@ inline ParseResult parse_command(std::string_view line) {
   std::string_view kind;
   if (!next_token(rest, kind)) return ParseResult::skip();
 
+  std::string_view inst_tok;
+  InstrumentId instrument{};
+  if (!next_token(rest, inst_tok) || !to_number(inst_tok, instrument))
+    return ParseResult::fail("every command needs a numeric instrument id");
+
   if (kind == "C") {
     std::string_view id_tok;
     OrderId id{};
     if (!next_token(rest, id_tok) || !to_number(id_tok, id))
       return ParseResult::fail("cancel needs a numeric order id");
-    return ParseResult::ok(CancelOrder{id});
+    return ParseResult::ok(CancelOrder{id, instrument});
   }
 
   if (kind == "M") {
     std::string_view id_tok, px_tok, qty_tok;
     ModifyOrder mod{};
+    mod.instrument = instrument;
     if (!next_token(rest, id_tok) || !next_token(rest, px_tok) ||
         !next_token(rest, qty_tok))
       return ParseResult::fail("modify needs: id price qty");
@@ -103,6 +112,7 @@ inline ParseResult parse_command(std::string_view line) {
     return ParseResult::fail("new order needs: id side type price qty");
 
   NewOrder n{};
+  n.instrument = instrument;
   if (!to_number(id_tok, n.id)) return ParseResult::fail("bad order id");
   if (side_tok == "B") n.side = Side::Buy;
   else if (side_tok == "S") n.side = Side::Sell;
@@ -137,6 +147,7 @@ inline std::string reason_name(RejectReason r) {
     case RejectReason::PriceOutOfRange: return "price_out_of_range";
     case RejectReason::PostOnlyWouldCross: return "post_only_would_cross";
     case RejectReason::PostOnlyMarketOrder: return "post_only_market";
+    case RejectReason::UnknownInstrument: return "unknown_instrument";
   }
   return "unknown";
 }
@@ -151,24 +162,25 @@ inline std::string cancel_reason_name(CancelReason r) {
   return "unknown";
 }
 
-inline std::string format_event(const Event& e) {
+inline std::string format_event(const Event& e, InstrumentId instrument) {
+  const std::string inst = std::to_string(instrument) + " ";
   return std::visit(
-      [](const auto& v) -> std::string {
+      [&inst](const auto& v) -> std::string {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, Accepted>) {
-          return "A " + std::to_string(v.id) + " " + std::to_string(v.seq);
+          return "A " + inst + std::to_string(v.id) + " " + std::to_string(v.seq);
         } else if constexpr (std::is_same_v<T, Rejected>) {
-          return "R " + std::to_string(v.id) + " " + reason_name(v.reason);
+          return "R " + inst + std::to_string(v.id) + " " + reason_name(v.reason);
         } else if constexpr (std::is_same_v<T, Trade>) {
-          return "T " + std::to_string(v.maker_id) + " " + std::to_string(v.taker_id) +
+          return "T " + inst + std::to_string(v.maker_id) + " " + std::to_string(v.taker_id) +
                  " " + std::to_string(v.price) + " " + std::to_string(v.quantity) +
                  " " + std::to_string(v.seq);
         } else if constexpr (std::is_same_v<T, Modified>) {
-          return "M " + std::to_string(v.id) + " " + std::to_string(v.quantity) + " " +
+          return "M " + inst + std::to_string(v.id) + " " + std::to_string(v.quantity) + " " +
                  std::to_string(v.price) + " " + std::to_string(v.seq) +
                  (v.kept_priority ? " kept" : " lost");
         } else {
-          return "X " + std::to_string(v.id) + " " + std::to_string(v.unfilled_quantity) +
+          return "X " + inst + std::to_string(v.id) + " " + std::to_string(v.unfilled_quantity) +
                  " " + cancel_reason_name(v.reason);
         }
       },
