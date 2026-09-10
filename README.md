@@ -13,18 +13,21 @@ session, no server needed)
 ## What works
 
 - Limit and market orders, price-time priority, FIFO within a price level
-- Partial fills with correct residual handling, cancel, and rejections
+- Immediate-or-cancel, fill-or-kill, and post-only
+- Modify, with the priority rules that make it interesting
+- Self-trade prevention
+- Multiple instruments, one book each
+- Partial fills with correct residual handling, cancel, and typed rejections
 - Four book implementations behind one compile-time seam, all passing the same
   test suite and all producing byte-identical output
 - A benchmark that measures them honestly and refuses to report anything if
-  they disagree
+  they disagree, plus a simulated cache profile that explains the result
 - Five trading agents generating realistic, cancel-heavy order flow
 - Deterministic everywhere: same input bytes give the same output bytes, and
   the same seed gives the same session
 
-Not yet: IOC, FOK, post-only, modify, self-trade prevention, multiple
-instruments. Avellaneda-Stoikov market making. Any of the stylized-facts
-analysis.
+Not yet: Avellaneda-Stoikov market making, the arbitrage bot, the Pokemon
+fundamentals, and the stylized-facts analysis.
 
 ## Build and test
 
@@ -73,6 +76,40 @@ cmake --build build-asan -j
 ctest --test-dir build-asan --output-on-failure
 ```
 
+## Order types and the rules that go with them
+
+| Type | Behaviour | The problem it solves |
+|---|---|---|
+| Limit | Trade at your price or better, rest the remainder | Never a bad price, but possibly no fill |
+| Market | Trade until filled at any price, cancel the remainder | Certainty of getting done |
+| IOC | Take what is there now, cancel the rest rather than resting | Taking liquidity without showing your hand |
+| FOK | The entire quantity immediately, or nothing at all | When a partial fill is worse than none, like one leg of a hedge |
+| Post-only | Must rest; rejected if it would trade | Guarantees maker status, and the rebate that comes with it |
+
+**Modify** is the one worth reading the code for. One rule generates all three
+cases: an order keeps its place in the queue exactly as long as it has not
+increased the risk anyone else is taking on its behalf.
+
+| You want to | Priority | Because |
+|---|---|---|
+| Reduce quantity | Kept | Asking for less harms nobody behind you, so there is nothing to charge |
+| Increase quantity | Lost | The extra size never waited |
+| Change price | Lost | You have never queued at the new price at all |
+
+Losing priority is implemented as a cancel plus a fresh insert, in terms of
+primitives that already existed, rather than as a third code path that could
+drift out of agreement with them. Keeping priority needs the opposite,
+mutation in place, which is why the book contract exposes `find` returning a
+pointer rather than a copy.
+
+**Self-trade prevention** cancels the incoming order and leaves the resting one
+alone. That has a consequence worth knowing rather than discovering: a
+participant's own resting order shields everything behind it from that
+participant. The interaction that took the most care is with fill-or-kill,
+whose feasibility check has to apply prevention too. Otherwise a FOK gets
+judged fillable using liquidity it can never reach, is accepted, and then stops
+half way, leaving exactly the partial fill it promises never to produce.
+
 ## The four books
 
 Each version changes exactly one thing, so a measured gain can be attributed to
@@ -111,6 +148,40 @@ like**, while v0 degrades 8.5x and v1 degrades 14.1x going from wide to deep.
 O(1) cancel makes throughput close to invariant to book geometry, and since
 cancels are roughly 90% of real message traffic, that is the change that
 actually matters.
+
+### Why those numbers come out that way
+
+`perf stat` cannot read hardware counters on a virtualised CI runner, so the
+cache evidence comes from valgrind, which simulates a cache instead. These are
+therefore modelled figures rather than measurements: the direction and
+magnitude are meaningful, the absolute values are not a claim about any real
+CPU. Collection starts after the book is built, so construction is excluded.
+It runs on every push, and the table lands in the Actions summary.
+
+| book | instructions | data refs | D1 misses | D1 miss rate | D1 vs v0 |
+|---|---|---|---|---|---|
+| v0 | 134.3M | 56.0M | 3,386,802 | 6.0% | baseline |
+| v1 | 172.4M | 54.4M | 2,234,652 | 4.1% | 0.66x |
+| v2 | 134.2M | 37.6M | 2,638,815 | 7.0% | 0.78x |
+| v3 | 110.6M | 28.4M | 960,802 | 3.4% | 0.28x |
+
+This is the part that turns the throughput table from an assertion into an
+explanation, and each row says something different:
+
+**v1 buys cache misses with instructions.** A third fewer D1 misses, but 28%
+more instructions executed, because the bitmask scan and the index arithmetic
+are not free. That is exactly why its throughput gain is a modest 1.27x rather
+than the transformation the miss rate alone would suggest.
+
+**v2 touches less memory and misses more often.** A third fewer data references,
+because an intrusive list has less bookkeeping to read than a deque, yet the
+worst miss rate of the four at 7.0%. That is the locality problem measured
+directly and independently of the timings: a shared pool scatters a price
+level's nodes, where a deque keeps them contiguous.
+
+**v3 wins on every axis at once.** Fewest instructions, fewest data references,
+lowest miss rate, and 0.28x the D1 misses. That is what resolving an order id
+in one probe instead of walking a level buys you.
 
 Latency percentiles come with a caveat that is printed alongside them:
 `steady_clock` on Apple silicon is backed by a 24MHz timer, so it advances in
@@ -191,7 +262,7 @@ The invariant tests were also checked by breaking the engine on purpose in five
 different ways and confirming each one gets caught. A test that has never failed
 has not been shown to work.
 
-117 tests, clean under AddressSanitizer and UndefinedBehaviorSanitizer.
+313 tests, clean under AddressSanitizer and UndefinedBehaviorSanitizer.
 
 ## Design decisions worth knowing
 
@@ -229,11 +300,14 @@ include/pokex/
   book_v3_hash.hpp      open-addressing id index, O(1) cancel
   detail/ladder_pool.hpp  machinery shared by v2 and v3
   matching.hpp          the matching loop, written once against the concept
+  exchange.hpp          one book per instrument, and the router in front
   text_codec.hpp        the replay file format
   sim/simulator.hpp     agents, virtual clock, session recording
-src/                    replay, sim and bench CLIs
+src/                    replay, sim, bench and profile CLIs
 reference/engine.py     independent Python implementation
-tests/                  golden, property, equivalence, differential, determinism
+tests/                  golden, order types, modify, self-trade, exchange,
+                        property, equivalence, differential, determinism
+tools/                  the cache profile summariser
 ui/                     the terminal. No build step, no dependencies
 docs/explainer/         a 41 page primer on how all of this works
 docs/superpowers/       design specs
@@ -247,8 +321,8 @@ docs/superpowers/       design specs
 | C1 | v1 to v3, benchmark harness | done |
 | B1 | trading agents, recorded sessions | done |
 | D1 | terminal UI | done |
-| A2 | IOC, FOK, post-only, modify, self-trade prevention, multi-instrument | next |
-| E | Avellaneda-Stoikov market maker, arbitrage bot, Pokemon fundamentals | |
+| A2 | IOC, FOK, post-only, modify, self-trade prevention, multi-instrument | done |
+| E | Avellaneda-Stoikov market maker, arbitrage bot, Pokemon fundamentals | next |
 | F | stylized facts analysis: fat tails, volatility clustering, market impact | |
 
 ## Reading
