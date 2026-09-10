@@ -66,6 +66,17 @@ class BookV2Pool {
     return std::nullopt;  // unreachable if the index is consistent
   }
 
+  // O(level size): this version knows which level the order is on but not
+  // where in it.
+  Order* find(OrderId id) {
+    const auto found = index_.find(id);
+    if (found == index_.end()) return nullptr;
+    for (detail::NodeIndex i = core_.level(found->second.side, found->second.price).head;
+         i != detail::kNil; i = core_.node(i).next)
+      if (core_.node(i).order.id == id) return &core_.node(i).order;
+    return nullptr;
+  }
+
   // ------------------------------------------------- not part of the contract
   std::size_t size() const { return index_.size(); }
 

@@ -164,6 +164,14 @@ class BookV3Hash {
     return copy;
   }
 
+  // One probe, no search. The same index that makes cancel O(1) makes an
+  // in-place modify O(1).
+  Order* find(OrderId id) {
+    const detail::NodeIndex* node = index_.find(id);
+    if (node == nullptr) return nullptr;
+    return &core_.node(*node).order;
+  }
+
   // ------------------------------------------------- not part of the contract
   std::size_t size() const { return index_.size(); }
 

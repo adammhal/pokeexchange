@@ -32,6 +32,9 @@ inline std::string render(const Event& e) {
         } else if constexpr (std::is_same_v<T, Trade>) {
           o << "TRD maker=" << v.maker_id << " taker=" << v.taker_id
             << " px=" << v.price << " qty=" << v.quantity;
+        } else if constexpr (std::is_same_v<T, Modified>) {
+          o << "MOD " << v.id << " qty=" << v.quantity << " px=" << v.price
+            << " seq=" << v.seq << (v.kept_priority ? " kept" : " lost");
         } else {
           o << "CXL " << v.id << " unfilled=" << v.unfilled_quantity << " ";
           switch (v.reason) {
@@ -77,6 +80,7 @@ class Harness {
     send(NewOrder{id, side, OrderType::Market, 0, qty, TimeInForce::GoodTillCancel, true});
   }
   void cancel(OrderId id) { send(CancelOrder{id}); }
+  void modify(OrderId id, Price px, Quantity qty) { send(ModifyOrder{id, px, qty}); }
 
   void send(const Command& c) {
     engine_.submit(c, [&](const Event& e) { events_.push_back(e); });

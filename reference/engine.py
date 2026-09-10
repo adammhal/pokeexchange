@@ -114,8 +114,12 @@ class Engine:
         self.seq += 1
         seq = self.seq
         out.append(f"A {oid} {seq}")
+        self._work(oid, side, otype, price, qty, qty, seq, tif, out)
 
-        remaining = qty
+    def _work(self, oid, side, otype, price, total, remaining, seq, tif, out):
+        """Match against the book, then deal with any remainder."""
+        other = SELL if side == BUY else BUY
+        order = {"id": oid, "side": side, "type": otype, "price": price}
 
         while remaining > 0:
             best = self.best(other)
@@ -139,9 +143,53 @@ class Engine:
         if otype == LIMIT and tif == GTC:
             self.levels[side].setdefault(price, []).append(
                 {"id": oid, "side": side, "type": otype, "price": price,
-                 "quantity": qty, "remaining": remaining, "seq": seq})
+                 "quantity": total, "remaining": remaining, "seq": seq})
         else:
             out.append(f"X {oid} {remaining} no_liquidity")
+
+    def locate(self, oid):
+        for side_levels in self.levels.values():
+            for queue in side_levels.values():
+                for o in queue:
+                    if o["id"] == oid:
+                        return o
+        return None
+
+    def modify(self, oid, price, qty, out):
+        if qty == 0:
+            out.append(f"R {oid} zero_quantity")
+            return
+        if not (MIN_PRICE <= price <= MAX_PRICE):
+            out.append(f"R {oid} price_out_of_range")
+            return
+        o = self.locate(oid)
+        if o is None:
+            out.append(f"R {oid} unknown_order")
+            return
+
+        filled = o["quantity"] - o["remaining"]
+        if qty <= filled:
+            unfilled = o["remaining"]
+            self.remove(oid)
+            self.seq += 1
+            out.append(f"X {oid} {unfilled} user")
+            return
+
+        new_remaining = qty - filled
+        if price == o["price"] and new_remaining <= o["remaining"]:
+            o["quantity"] = qty
+            o["remaining"] = new_remaining
+            kept = o["seq"]                          # unchanged, by design
+            self.seq += 1
+            out.append(f"M {oid} {qty} {price} {kept} kept")
+            return
+
+        side = o["side"]
+        self.remove(oid)
+        self.seq += 1
+        seq = self.seq
+        out.append(f"M {oid} {qty} {price} {seq} lost")
+        self._work(oid, side, LIMIT, price, qty, new_remaining, seq, GTC, out)
 
     def cancel(self, oid, out):
         removed = self.remove(oid)
@@ -166,6 +214,8 @@ def run(lines, write):
         out = []
         if parts[0] == "C":
             engine.cancel(int(parts[1]), out)
+        elif parts[0] == "M":
+            engine.modify(int(parts[1]), int(parts[2]), int(parts[3]), out)
         elif parts[0] == "N":
             oid, side, otype, price, qty = parts[1:6]
             tif, post_only = GTC, False

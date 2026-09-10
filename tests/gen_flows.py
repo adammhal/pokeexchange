@@ -15,6 +15,12 @@ def flow(rng, start_id, n):
         if issued and rng.random() < 0.45:
             lines.append(f"C {rng.choice(issued)}")
             continue
+        if issued and rng.random() < 0.22:
+            # Modifies, covering all three priority outcomes: same price
+            # smaller (keeps), same price larger (loses), new price (loses).
+            target = rng.choice(issued)
+            lines.append(f"M {target} {rng.randint(95, 105)} {rng.randint(1, 250)}")
+            continue
         oid = start_id + len(issued)
         issued.append(oid)
         side = rng.choice("BS")

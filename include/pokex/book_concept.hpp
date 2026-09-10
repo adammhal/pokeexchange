@@ -41,6 +41,14 @@ concept Book = requires(B book, const B const_book, Side side, const Order& orde
   // Remove by id, returning the order as it stood. nullopt if not present.
   { book.cancel(id) } -> std::same_as<std::optional<Order>>;
 
+  // Locate a resting order for modification in place, or nullptr.
+  //
+  // Returning a pointer rather than a copy is what makes a quantity reduction
+  // possible at all: the order has to be changed where it sits, because the
+  // whole point is that it does not lose its place in the queue. There is no
+  // "insert at this position" operation and there should not be.
+  { book.find(id) } -> std::same_as<Order*>;
+
   // Visit resting orders on a side in strict priority order: best price first,
   // and oldest first within a price. The callback returns false to stop.
   //

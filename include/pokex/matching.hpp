@@ -83,6 +83,15 @@ class MatchingEngine {
     emit(Event{Accepted{n.id, seq}});
 
     Order order{n.id, n.side, n.type, n.price, n.quantity, n.quantity, seq};
+    match(order, n.tif, emit);
+  }
+
+  // Runs an order against the book, then decides what to do with any
+  // remainder. Shared by new orders and by repriced ones, so the two cannot
+  // disagree about how matching works.
+  template <typename Emit>
+  void match(Order& order, TimeInForce tif, Emit& emit) {
+    const Side other = opposite(order.side);
 
     while (order.remaining > 0) {
       const auto best = book_.best(other);
@@ -91,7 +100,7 @@ class MatchingEngine {
       Order& resting = book_.front(other);  // oldest at the best price
       const Quantity fill = std::min(order.remaining, resting.remaining);
 
-      emit(Event{Trade{resting.id, order.id, *best, fill, seq}});
+      emit(Event{Trade{resting.id, order.id, *best, fill, order.seq}});
       order.remaining -= fill;
       resting.remaining -= fill;
 
@@ -103,7 +112,7 @@ class MatchingEngine {
 
     // Only a good-till-cancel limit order rests. Everything else gives up its
     // remainder here.
-    if (order.type == OrderType::Limit && n.tif == TimeInForce::GoodTillCancel) {
+    if (order.type == OrderType::Limit && tif == TimeInForce::GoodTillCancel) {
       book_.insert(order);  // join the back of the queue and wait
     } else {
       emit(Event{Canceled{order.id, order.remaining, CancelReason::NoLiquidity}});
@@ -122,6 +131,74 @@ class MatchingEngine {
       return total < needed;
     });
     return static_cast<Quantity>(std::min<std::uint64_t>(total, needed));
+  }
+
+  // Modify.
+  //
+  // The rule: an order keeps its place in the queue exactly as long as it has
+  // not increased the risk anyone else is taking on its behalf. Reducing
+  // quantity lowers your own exposure and harms nobody behind you, so there is
+  // nothing to charge for. Asking for more inserts size that never waited, and
+  // moving price means arriving somewhere you have never queued at all. Both
+  // go to the back.
+  //
+  // Losing priority is implemented as a cancel plus a fresh insert, in terms of
+  // primitives that already exist, rather than as a third code path that could
+  // drift out of agreement with them.
+  template <typename Emit>
+  void handle(const ModifyOrder& m, Emit& emit) {
+    if (m.quantity == 0) {
+      emit(Event{Rejected{m.id, RejectReason::ZeroQuantity}});
+      return;
+    }
+    if (m.price < kMinPrice || m.price > kMaxPrice) {
+      emit(Event{Rejected{m.id, RejectReason::PriceOutOfRange}});
+      return;
+    }
+
+    Order* resting = book_.find(m.id);
+    if (resting == nullptr) {
+      emit(Event{Rejected{m.id, RejectReason::UnknownOrder}});
+      return;
+    }
+
+    // `quantity` is the new total, so what is still workable is the new total
+    // less whatever has already been filled.
+    const Quantity filled = resting->quantity - resting->remaining;
+
+    if (m.quantity <= filled) {
+      // The order is already done at least as much as it now asks for, so
+      // there is nothing left to work.
+      const Quantity unfilled = resting->remaining;
+      book_.cancel(m.id);
+      ++seq_;
+      emit(Event{Canceled{m.id, unfilled, CancelReason::UserRequested}});
+      return;
+    }
+
+    const Quantity new_remaining = m.quantity - filled;
+    const bool same_price = (m.price == resting->price);
+    const bool not_growing = (new_remaining <= resting->remaining);
+
+    if (same_price && not_growing) {
+      resting->quantity = m.quantity;
+      resting->remaining = new_remaining;
+      const Sequence kept = resting->seq;  // unchanged: that is the whole point
+      ++seq_;
+      emit(Event{Modified{m.id, m.quantity, m.price, kept, true}});
+      return;
+    }
+
+    const Side side = resting->side;
+    book_.cancel(m.id);
+
+    const Sequence seq = ++seq_;
+    emit(Event{Modified{m.id, m.quantity, m.price, seq, false}});
+
+    // A resting order is always a good-till-cancel limit order, and a repriced
+    // one may now cross, in which case it trades like any other aggressor.
+    Order moved{m.id, side, OrderType::Limit, m.price, m.quantity, new_remaining, seq};
+    match(moved, TimeInForce::GoodTillCancel, emit);
   }
 
   template <typename Emit>

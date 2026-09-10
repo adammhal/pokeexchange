@@ -23,7 +23,18 @@ struct CancelOrder {
   OrderId id{};
 };
 
-using Command = std::variant<NewOrder, CancelOrder>;
+// Change a resting order's price or quantity.
+//
+// `quantity` is the new TOTAL for the order, including whatever has already
+// been filled, which is the FIX convention. Setting it at or below the filled
+// amount means there is no work left, so the order is cancelled.
+struct ModifyOrder {
+  OrderId id{};
+  Price price{};
+  Quantity quantity{};
+};
+
+using Command = std::variant<NewOrder, CancelOrder, ModifyOrder>;
 
 // ---------------------------------------------------------------- events out
 enum class RejectReason : std::uint8_t {
@@ -65,12 +76,23 @@ struct Trade {
   Sequence seq{};
 };
 
+// A modify was applied. `kept_priority` is the interesting part: it says
+// whether the order held its place in the queue, and `seq` is its priority
+// sequence afterwards, which is a new one if it went to the back.
+struct Modified {
+  OrderId id{};
+  Quantity quantity{};
+  Price price{};
+  Sequence seq{};
+  bool kept_priority{};
+};
+
 struct Canceled {
   OrderId id{};
   Quantity unfilled_quantity{};
   CancelReason reason{CancelReason::UserRequested};
 };
 
-using Event = std::variant<Accepted, Rejected, Trade, Canceled>;
+using Event = std::variant<Accepted, Rejected, Trade, Modified, Canceled>;
 
 }  // namespace pokex

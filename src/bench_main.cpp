@@ -168,6 +168,10 @@ struct StreamHash {
           } else if constexpr (std::is_same_v<T, Trade>) {
             feed(3); feed(v.maker_id); feed(v.taker_id);
             feed(static_cast<std::uint64_t>(v.price)); feed(v.quantity); feed(v.seq);
+          } else if constexpr (std::is_same_v<T, Modified>) {
+            feed(5); feed(v.id); feed(v.quantity);
+            feed(static_cast<std::uint64_t>(v.price)); feed(v.seq);
+            feed(v.kept_priority ? 1u : 0u);
           } else {
             feed(4); feed(v.id); feed(v.unfilled_quantity);
           }

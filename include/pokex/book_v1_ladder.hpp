@@ -97,6 +97,17 @@ class BookV1Ladder {
     return std::nullopt;  // unreachable if the index is consistent
   }
 
+
+  // O(level size), same as this version's cancel. v3 makes it a single probe.
+  Order* find(OrderId id) {
+    const auto found = index_.find(id);
+    if (found == index_.end()) return nullptr;
+    auto& queue = levels(found->second.side)[static_cast<std::size_t>(found->second.price)];
+    for (auto& order : queue)
+      if (order.id == id) return &order;
+    return nullptr;
+  }
+
   // ------------------------------------------------- not part of the contract
   std::size_t size() const { return index_.size(); }
 

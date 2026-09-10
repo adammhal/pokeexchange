@@ -15,7 +15,8 @@
 //   commands                              events
 //   N <id> B|S L|M <px> <qty> [flags...]   A <id> <seq>
 //   C <id>                                 R <id> <reason>
-//                                          T <maker> <taker> <px> <qty> <seq>
+//   M <id> <px> <qty>                      T <maker> <taker> <px> <qty> <seq>
+//                                          M <id> <qty> <px> <seq> kept|lost
 //                                          X <id> <unfilled> <reason>
 //
 // Flags are optional and order-independent, so files written before they
@@ -78,6 +79,18 @@ inline ParseResult parse_command(std::string_view line) {
     if (!next_token(rest, id_tok) || !to_number(id_tok, id))
       return ParseResult::fail("cancel needs a numeric order id");
     return ParseResult::ok(CancelOrder{id});
+  }
+
+  if (kind == "M") {
+    std::string_view id_tok, px_tok, qty_tok;
+    ModifyOrder mod{};
+    if (!next_token(rest, id_tok) || !next_token(rest, px_tok) ||
+        !next_token(rest, qty_tok))
+      return ParseResult::fail("modify needs: id price qty");
+    if (!to_number(id_tok, mod.id)) return ParseResult::fail("bad order id");
+    if (!to_number(px_tok, mod.price)) return ParseResult::fail("bad price");
+    if (!to_number(qty_tok, mod.quantity)) return ParseResult::fail("bad quantity");
+    return ParseResult::ok(mod);
   }
 
   if (kind != "N") return ParseResult::fail("unknown command '" + std::string(kind) + "'");
@@ -143,6 +156,10 @@ inline std::string format_event(const Event& e) {
           return "T " + std::to_string(v.maker_id) + " " + std::to_string(v.taker_id) +
                  " " + std::to_string(v.price) + " " + std::to_string(v.quantity) +
                  " " + std::to_string(v.seq);
+        } else if constexpr (std::is_same_v<T, Modified>) {
+          return "M " + std::to_string(v.id) + " " + std::to_string(v.quantity) + " " +
+                 std::to_string(v.price) + " " + std::to_string(v.seq) +
+                 (v.kept_priority ? " kept" : " lost");
         } else {
           return "X " + std::to_string(v.id) + " " + std::to_string(v.unfilled_quantity) +
                  " " + cancel_reason_name(v.reason);

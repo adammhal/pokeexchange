@@ -73,6 +73,19 @@ class BookV0Map {
     return std::nullopt;  // unreachable if consistent
   }
 
+
+  // O(level size), same as this version's cancel. v3 makes it a single probe.
+  Order* find(OrderId id) {
+    const auto found = index_.find(id);
+    if (found == index_.end()) return nullptr;
+    auto& levels = (found->second.side == Side::Buy) ? bids_ : asks_;
+    const auto level = levels.find(found->second.price);
+    if (level == levels.end()) return nullptr;
+    for (auto& order : level->second)
+      if (order.id == id) return &order;
+    return nullptr;
+  }
+
   // ------------------------------------------------- not part of the contract,
   // used by the property tests to check invariants from the outside.
   std::size_t size() const { return index_.size(); }
