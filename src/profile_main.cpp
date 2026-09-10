@@ -16,6 +16,27 @@
 #include <cstring>
 #include <string>
 
+// Instrumentation is gated to the steady-state phase only.
+//
+// This matters more than it looks. v1 allocates 65,536 price levels per side,
+// so constructing one costs over a hundred thousand deque constructions before
+// it has seen a single order. Profiling the whole process would fold that into
+// the comparison and make v1 look far worse than it behaves once running,
+// which is the opposite of what the measurement is for. Callgrind can be told
+// to start collecting only when we say so; cachegrind cannot, which is why
+// this uses callgrind with cache simulation turned on.
+#if defined(__has_include)
+#  if __has_include(<valgrind/callgrind.h>)
+#    include <valgrind/callgrind.h>
+#    define POKEX_HAVE_CALLGRIND 1
+#  endif
+#endif
+#ifndef POKEX_HAVE_CALLGRIND
+#  define CALLGRIND_START_INSTRUMENTATION do {} while (0)
+#  define CALLGRIND_STOP_INSTRUMENTATION do {} while (0)
+#  define CALLGRIND_ZERO_STATS do {} while (0)
+#endif
+
 #include "flow.hpp"
 #include "pokex/all_books.hpp"
 #include "pokex/matching.hpp"
@@ -29,8 +50,15 @@ std::uint64_t replay(const bench::Flow& flow) {
   MatchingEngine<BookT> engine;
   std::uint64_t events = 0;
   const auto sink = [&events](const Event&) { ++events; };
+
+  // Construction and book building: deliberately outside the measurement.
   for (const auto& c : flow.preload) engine.submit(c, sink);
+
+  CALLGRIND_ZERO_STATS;
+  CALLGRIND_START_INSTRUMENTATION;
   for (const auto& c : flow.steady) engine.submit(c, sink);
+  CALLGRIND_STOP_INSTRUMENTATION;
+
   return events;
 }
 

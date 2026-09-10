@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Turns cachegrind summaries into a comparison table.
+"""Turns a valgrind cache summary into a comparison table.
 
-Cachegrind SIMULATES a cache rather than reading hardware counters, which is
+Valgrind SIMULATES a cache rather than reading hardware counters, which is
 exactly why it is usable here: it needs no PMU access, so it runs on a
 virtualised CI runner, where `perf stat` generally cannot read hardware events
 at all. The trade is that these are modelled figures rather than measurements.
@@ -13,13 +13,17 @@ a claim about any particular CPU.
 import re
 import sys
 
+# Whitespace between the label words varies between valgrind versions and
+# between cachegrind and callgrind, so it is matched loosely rather than
+# literally. Getting this wrong is how the first run produced a table with two
+# columns of question marks.
 FIELDS = [
-    ("I   refs", "insn"),
-    ("D   refs", "data refs"),
-    ("D1  misses", "D1 misses"),
-    ("D1  miss rate", "D1 miss rate"),
-    ("LLd misses", "LLd misses"),
-    ("LLd miss rate", "LLd miss rate"),
+    (r"I\s+refs", "insn"),
+    (r"D\s+refs", "data refs"),
+    (r"D1\s+misses", "D1 misses"),
+    (r"D1\s+miss rate", "D1 miss rate"),
+    (r"LLd\s+misses", "LLd misses"),
+    (r"LLd\s+miss rate", "LLd miss rate"),
 ]
 
 COLUMNS = [key for _, key in FIELDS]
@@ -29,8 +33,8 @@ def parse(path):
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = fh.read()
     found = {}
-    for needle, key in FIELDS:
-        match = re.search(re.escape(needle) + r":\s+([0-9,.%]+)", text)
+    for pattern, key in FIELDS:
+        match = re.search(r"==\d+==\s+" + pattern + r":\s+([0-9,.%]+)", text)
         if match:
             found[key] = match.group(1)
     return found
@@ -76,7 +80,7 @@ def main(argv):
     missing = [name for name, found in runs if "D1 misses" not in found]
     if missing:
         print(f"\nNo cache figures parsed for: {', '.join(missing)}. "
-              "Cachegrind may have run without --cache-sim=yes.", file=sys.stderr)
+              "The profiler may have run without --cache-sim=yes.", file=sys.stderr)
         return 1
     return 0
 

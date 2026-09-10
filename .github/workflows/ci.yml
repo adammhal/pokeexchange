@@ -72,27 +72,32 @@ jobs:
       - name: Build the profiling target
         run: cmake --build build -j --target pokex-profile
 
+      # Callgrind rather than cachegrind, because only callgrind can be told to
+      # start collecting partway through. v1 constructs 65,536 price levels per
+      # side, and folding that into the numbers would make it look far worse
+      # than it behaves in steady state.
       - name: Profile each book version
         run: |
           for book in v0 v1 v2 v3; do
-            echo "::group::cachegrind $book"
-            valgrind --tool=cachegrind --cache-sim=yes --branch-sim=no \
-                     --cachegrind-out-file=/tmp/cg.$book.data \
+            echo "::group::callgrind $book"
+            valgrind --tool=callgrind --cache-sim=yes --instr-atstart=no \
+                     --callgrind-out-file=/tmp/cg.$book.data \
                      ./build/pokex-profile "$book" --scenario mixed \
-                       --resident 120000 --levels 4096 --messages 60000 \
+                       --resident 120000 --levels 4096 --messages 200000 \
                      2> "/tmp/cg.$book.txt"
-            tail -20 "/tmp/cg.$book.txt"
+            tail -22 "/tmp/cg.$book.txt"
             echo "::endgroup::"
           done
 
       - name: Summarise
         run: |
           {
-            echo "### Simulated cache behaviour"
+            echo "### Simulated cache behaviour (steady state only)"
             echo
-            echo "Cachegrind models a cache rather than reading hardware counters,"
-            echo "so these are modelled figures. Direction and magnitude are"
-            echo "meaningful; the absolute values are not a claim about a real CPU."
+            echo "Valgrind models a cache rather than reading hardware counters, so"
+            echo "these are modelled figures. Direction and magnitude are meaningful;"
+            echo "the absolute values are not a claim about a real CPU. Collection"
+            echo "starts after the book is built, so construction is excluded."
             echo
             python3 tools/parse_cachegrind.py \
               v0=/tmp/cg.v0.txt v1=/tmp/cg.v1.txt \
