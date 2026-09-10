@@ -31,6 +31,10 @@ target_link_libraries(pokex-replay PRIVATE pokex pokex_warnings)
 add_executable(pokex-sim src/sim_main.cpp)
 target_link_libraries(pokex-sim PRIVATE pokex pokex_warnings)
 
+add_executable(pokex-profile src/profile_main.cpp)
+target_include_directories(pokex-profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(pokex-profile PRIVATE pokex pokex_warnings)
+
 add_executable(pokex-bench src/bench_main.cpp)
 target_include_directories(pokex-bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pokex-bench PRIVATE pokex pokex_warnings)

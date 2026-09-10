@@ -50,3 +50,56 @@ jobs:
 
       - name: Fuzz under sanitizers (shorter)
         run: ./build-asan/pokex-tests "[property]" --order rand
+
+  # The cache-miss evidence for the v0-to-v1 claim.
+  #
+  # `perf stat` cannot read hardware events on a virtualised runner, so this
+  # uses cachegrind, which SIMULATES a cache instead. That makes these modelled
+  # figures rather than measurements: the direction and rough magnitude are
+  # meaningful, the absolute numbers are not a claim about any real CPU. It is
+  # the honest way to get the evidence without renting a bare-metal box.
+  cache-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPOKEX_BUILD_TESTS=OFF
+
+      - name: Build the profiling target
+        run: cmake --build build -j --target pokex-profile
+
+      - name: Profile each book version
+        run: |
+          for book in v0 v1 v2 v3; do
+            echo "::group::cachegrind $book"
+            valgrind --tool=cachegrind --cache-sim=yes --branch-sim=no \
+                     --cachegrind-out-file=/tmp/cg.$book.data \
+                     ./build/pokex-profile "$book" --scenario mixed \
+                       --resident 120000 --levels 4096 --messages 60000 \
+                     2> "/tmp/cg.$book.txt"
+            tail -20 "/tmp/cg.$book.txt"
+            echo "::endgroup::"
+          done
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Simulated cache behaviour"
+            echo
+            echo "Cachegrind models a cache rather than reading hardware counters,"
+            echo "so these are modelled figures. Direction and magnitude are"
+            echo "meaningful; the absolute values are not a claim about a real CPU."
+            echo
+            python3 tools/parse_cachegrind.py \
+              v0=/tmp/cg.v0.txt v1=/tmp/cg.v1.txt \
+              v2=/tmp/cg.v2.txt v3=/tmp/cg.v3.txt
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cachegrind
+          path: /tmp/cg.*
